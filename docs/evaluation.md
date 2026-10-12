@@ -198,6 +198,4 @@ Les gains de récupération documentaire sont plus modestes et des erreurs factu
 | `evaluation/run_ragas_baseline_comparison.py` | Script de recalcul de la baseline documentaire |
 | `evaluation/retry_baseline_q01.py` | Recalcul ciblé de la Faithfulness de Q01 |
 
-**Reproductibilité :** les moyennes du tableau principal doivent pouvoir être recalculées à partir des CSV archivés. Le fichier `ragas_baseline_comparison.csv` a été mis à jour localement après le recalcul de Q01 ; vérifier sa présence dans le dépôt avant publication de ce document.
-
 Les réponses et scores archivés permettent de retracer les calculs, sans garantir une reproduction strictement identique : le juge LLM et l’alias `mistral-small-latest` peuvent évoluer.

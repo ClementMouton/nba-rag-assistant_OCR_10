@@ -220,8 +220,8 @@ Utilisé pour la représentation vectorielle des chunks et des questions.
 ## 9. Installation
 
 ```bash
-git clone https://github.com/ClementMouton/OCR_Projet_10.git
-cd OCR_Projet_10
+git clone https://github.com/ClementMouton/nba-rag-assistant_OCR_10.git
+cd nba-rag-assistant_OCR_10
 python -m venv .venv
 ```
 
@@ -317,33 +317,66 @@ HYBRID       : Q11 à Q12
 ### SQL
 
 ```text
-4 / 4 requêtes correctes
-Exactitude SQL : 100 %
+Questions statistiques Q07–Q10 :
+
+Prototype main : 0 / 4 réponses conformes
+Version develop : 4 / 4 réponses conformes
 ```
 
 ---
 
+
 ## 13. Évaluation RAGAS
 
-RAGAS évalue les routes `rag` et `hybrid`. Les routes `sql` sont évaluées séparément et `out_of_scope` est exclue.
+L'évaluation RAGAS mesure la qualité des réponses documentaires du système à partir de trois métriques :
 
-| Métrique | Score |
-|---|---:|
-| Faithfulness | 0,7000 |
-| Context Precision | 0,6127 |
-| Context Recall | 0,5476 |
+- **Faithfulness** : fidélité des affirmations générées aux contextes récupérés.
+- **Context Precision** : pertinence et classement des passages documentaires récupérés.
+- **Context Recall** : couverture des informations attendues par les contextes récupérés.
+
+### Comparaison du prototype et de la version enrichie
+
+La comparaison porte sur les **5 questions documentaires communes (Q01 à Q05)**.
+
+| Métrique | Prototype `main` | Version enrichie `develop` | Écart |
+|---|---:|---:|---:|
+| Faithfulness | 0,5002 | 0,8786 | +0,3784 |
+| Context Precision | 0,8186 | 0,8578 | +0,0392 |
+| Context Recall | 0,7000 | 0,7667 | +0,0667 |
+
+Les écarts sont exprimés en points sur une échelle de 0 à 1.
 
 ### Interprétation
 
-**Faithfulness — 0,7000** : les réponses restent globalement fondées sur le contexte fourni.
+La principale amélioration observée concerne la **Faithfulness**, qui passe de **0,5002 à 0,8786**. Les progrès en Context Precision et Context Recall sont plus modestes.
 
-**Context Precision — 0,6127** : une majorité des éléments remontés sont utiles, mais certains chunks restent peu pertinents.
+Ces résultats suggèrent une meilleure fidélité des réponses aux documents récupérés, sans démontrer une amélioration aussi importante du retrieval lui-même.
 
-**Context Recall — 0,5476** : une partie significative des informations nécessaires est retrouvée, mais le retrieval peut encore être amélioré.
+**Limite méthodologique :** les résultats des deux versions proviennent de campagnes d'évaluation distinctes. Les écarts observés ne peuvent donc pas être attribués avec certitude aux seules modifications de l'architecture.
+
+### Évaluation des questions hybrides
+
+Les questions Q11 et Q12 combinent recherche documentaire et interrogation SQL. Elles sont analysées séparément afin de ne pas mélanger les performances documentaires et statistiques.
+
+| Question | Faithfulness | Context Precision | Context Recall |
+|---|---:|---:|---:|
+| Q11 | 0,3750 | 0,0000 | 0,0000 |
+| Q12 | 0,1316 | 0,0000 | 0,0000 |
+
+Ces scores révèlent des limites dans la justification documentaire des réponses hybrides. Ils doivent être interprétés avec prudence, car les métriques RAGAS ne mesurent pas directement l'exactitude des résultats SQL.
 
 ### Response Relevancy
 
-`ResponseRelevancy` a été testée mais retournait des valeurs `NaN` avec l'intégration Mistral/RAGAS utilisée dans l'environnement du projet. Elle a donc été retirée de l'évaluation finale.
+La métrique `ResponseRelevancy` a été expérimentée, mais elle retournait des valeurs `NaN` avec l'intégration Mistral/RAGAS utilisée. Elle n'a donc pas été retenue dans la comparaison finale.
+
+### Documentation détaillée
+
+Le protocole, les scores individuels, l'analyse des erreurs et les limites méthodologiques sont documentés dans [docs/evaluation.md](docs/evaluation.md).
+
+Les résultats bruts sont disponibles dans :
+
+- `evaluation/results/ragas_baseline_comparison.csv`
+- `evaluation/results/ragas_hybrid_rag_scores.csv`
 
 ---
 
