@@ -120,7 +120,7 @@ if question:
 
             try:
 
-                result = pipeline.ask(
+                result = pipeline.ask_traced(
                     question
                 )
 

@@ -12,7 +12,7 @@ from .config import (
 )
 from .vector_store import VectorStoreManager
 from .sql_tool import SQLTool
-
+from .observability import trace_step
 
 logging.basicConfig(
     level=logging.INFO,
@@ -599,9 +599,8 @@ ROUTE :
         # 1. Routage
         # ----------------------------------------------------
 
-        route = self.route_question(
-            question
-        )
+        with trace_step("nba.routing"):
+            route = self.route_question(question) 
 
         if route == "out_of_scope":
 
@@ -639,9 +638,8 @@ ROUTE :
             "hybrid",
         }:
 
-            search_results = self.retrieve(
-                question
-            )
+            with trace_step("nba.faiss_retrieval", top_k=SEARCH_K):
+                search_results = self.retrieve(question)
 
             rag_context = self.format_rag_context(
                 search_results
@@ -663,9 +661,8 @@ ROUTE :
 
             try:
 
-                sql_result = self.sql_tool.ask(
-                    question
-                )
+                with trace_step("nba.sql_query"):
+                    sql_result = self.sql_tool.ask(question)
 
                 sql_context = self.format_sql_context(
                     sql_result
@@ -714,10 +711,15 @@ ROUTE :
         # 5. Génération
         # ----------------------------------------------------
 
-        answer = self.generate(
-            question=question,
-            context_str=context_str,
-        )
+        with trace_step(
+            "nba.response_generation",
+            model=self.model,
+            route=route,
+        ):
+            answer = self.generate(
+                question=question,
+                context_str=context_str,
+            )
 
         # ----------------------------------------------------
         # 6. Métadonnées documentaires
@@ -779,3 +781,7 @@ ROUTE :
             "sql_results": sql_results,
             "sql_error": sql_error,
         }
+
+        def ask_traced(self, question: str) -> dict[str, Any]:
+            with trace_step("nba.question_processing"):
+                return self.ask(question)
