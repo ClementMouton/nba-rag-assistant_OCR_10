@@ -7,6 +7,8 @@ ENV/
 
 # Fichiers de configuration contenant des informations sensibles
 .env
+.venv_migration/
+.venv_clean/
 
 # Fichiers générés
 __pycache__/

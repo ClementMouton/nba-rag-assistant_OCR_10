@@ -658,7 +658,10 @@ ROUTE :
                 top_k=SEARCH_K,
             ) as span:
 
-                search_results = self.retrieve(question)
+                return self.vector_store.search(
+                    question,
+                    k=SEARCH_K,
+                )
 
                 span.set_attribute(
                     "nba.documents_retrieved",
