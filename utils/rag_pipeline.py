@@ -1,9 +1,9 @@
+
 import json
 import logging
 from typing import Any
 
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 from .config import (
     MISTRAL_API_KEY,
@@ -14,9 +14,10 @@ from .vector_store import VectorStoreManager
 from .sql_tool import SQLTool
 from .observability import trace_step
 
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(module)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(module)s - %(message)s",
 )
 
 
@@ -142,7 +143,7 @@ class RAGPipeline:
                 "La clé API Mistral (MISTRAL_API_KEY) n'est pas définie."
             )
 
-        self.client = MistralClient(
+        self.client = Mistral(
             api_key=MISTRAL_API_KEY
         )
 
@@ -170,7 +171,7 @@ class RAGPipeline:
 
         logging.info(
             "RAGPipeline initialisé avec %s vecteurs et SQLTool actif.",
-            self.vector_store.index.ntotal
+            self.vector_store.index.ntotal,
         )
 
     # ========================================================
@@ -436,25 +437,32 @@ QUESTION :
 ROUTE :
 """
 
-        messages = [
-            ChatMessage(
-                role="user",
-                content=prompt,
-            )
-        ]
-
-        response = self.client.chat(
+        # SDK Mistral 1.12.4
+        response = self.client.chat.complete(
             model=self.model,
-            messages=messages,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
             temperature=0,
         )
 
-        route = (
-            response.choices[0]
-            .message.content
-            .strip()
-            .lower()
-        )
+        if not response.choices:
+            raise RuntimeError(
+                "L'API Mistral n'a retourné aucune route."
+            )
+
+        content = response.choices[0].message.content
+
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(
+                "L'API Mistral a retourné une route vide "
+                "ou non textuelle."
+            )
+
+        route = content.strip().lower()
 
         valid_routes = {
             "rag",
@@ -484,12 +492,12 @@ ROUTE :
 
     def retrieve(
         self,
-        question: str
+        question: str,
     ) -> list[dict[str, Any]]:
 
         return self.vector_store.search(
             question,
-            k=SEARCH_K
+            k=SEARCH_K,
         )
 
     # ========================================================
@@ -498,7 +506,7 @@ ROUTE :
 
     def format_rag_context(
         self,
-        search_results: list[dict[str, Any]]
+        search_results: list[dict[str, Any]],
     ) -> str:
 
         if not search_results:
@@ -525,12 +533,12 @@ ROUTE :
 
     def format_sql_context(
         self,
-        sql_result: dict[str, Any]
+        sql_result: dict[str, Any],
     ) -> str:
 
         results = sql_result.get(
             "results",
-            []
+            [],
         )
 
         if not results:
@@ -553,25 +561,24 @@ ROUTE :
     def generate(
         self,
         question: str,
-        context_str: str
+        context_str: str,
     ) -> str:
 
         final_prompt = SYSTEM_PROMPT.format(
             context_str=context_str,
-            question=question
+            question=question,
         )
 
-        messages = [
-            ChatMessage(
-                role="user",
-                content=final_prompt
-            )
-        ]
-
-        response = self.client.chat(
+        # SDK Mistral 1.12.4
+        response = self.client.chat.complete(
             model=self.model,
-            messages=messages,
-            temperature=0.1
+            messages=[
+                {
+                    "role": "user",
+                    "content": final_prompt,
+                }
+            ],
+            temperature=0.1,
         )
 
         if not response.choices:
@@ -579,7 +586,15 @@ ROUTE :
                 "L'API Mistral n'a retourné aucune réponse valide."
             )
 
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(
+                "L'API Mistral a retourné une réponse "
+                "vide ou non textuelle."
+            )
+
+        return content
 
     # ========================================================
     # Pipeline complet
@@ -587,7 +602,7 @@ ROUTE :
 
     def ask(
         self,
-        question: str
+        question: str,
     ) -> dict[str, Any]:
 
         if not question or not question.strip():
@@ -601,7 +616,7 @@ ROUTE :
 
         with trace_step("nba.routing") as span:
             route = self.route_question(question)
-            span.set_attribute("nba.route", route) 
+            span.set_attribute("nba.route", route)
 
         if route == "out_of_scope":
 
@@ -627,7 +642,6 @@ ROUTE :
 
         search_results = []
         sql_result = None
-
         context_parts = []
 
         # ----------------------------------------------------
@@ -639,7 +653,11 @@ ROUTE :
             "hybrid",
         }:
 
-            with trace_step("nba.faiss_retrieval", top_k=SEARCH_K) as span:
+            with trace_step(
+                "nba.faiss_retrieval",
+                top_k=SEARCH_K,
+            ) as span:
+
                 search_results = self.retrieve(question)
 
                 span.set_attribute(
@@ -668,6 +686,7 @@ ROUTE :
             try:
 
                 with trace_step("nba.sql_query") as span:
+
                     sql_result = self.sql_tool.ask(question)
 
                     span.set_attribute(
@@ -732,6 +751,7 @@ ROUTE :
             model=self.model,
             route=route,
         ):
+
             answer = self.generate(
                 question=question,
                 context_str=context_str,
@@ -749,7 +769,7 @@ ROUTE :
         sources = [
             result["metadata"].get(
                 "source",
-                "Inconnue"
+                "Inconnue",
             )
             for result in search_results
         ]
@@ -775,7 +795,7 @@ ROUTE :
 
             sql_results = sql_result.get(
                 "results",
-                []
+                [],
             )
 
             sql_error = sql_result.get(
@@ -798,8 +818,17 @@ ROUTE :
             "sql_error": sql_error,
         }
 
-    def ask_traced(self, question: str) -> dict[str, Any]:
+    # ========================================================
+    # Observabilité globale Logfire
+    # ========================================================
+
+    def ask_traced(
+        self,
+        question: str,
+    ) -> dict[str, Any]:
+
         with trace_step("nba.question_processing") as span:
+
             result = self.ask(question)
 
             span.set_attribute(

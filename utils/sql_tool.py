@@ -1,16 +1,17 @@
+
 import logging
 import re
 import sqlite3
 from typing import Any
 
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 from utils.config import (
     MISTRAL_API_KEY,
     MODEL_NAME,
     NBA_DATABASE_FILE,
 )
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,7 +57,7 @@ IMPORTANT :
 
 
 # ============================================================
-# Few-shot examples
+# Exemples few-shot
 # ============================================================
 
 FEW_SHOT_EXAMPLES = """
@@ -144,6 +145,7 @@ WHERE team = 'ORL'
 ORDER BY pts DESC;
 """
 
+
 # ============================================================
 # SQL Tool
 # ============================================================
@@ -157,7 +159,7 @@ class SQLTool:
                 "La clé API Mistral n'est pas configurée."
             )
 
-        self.client = MistralClient(
+        self.client = Mistral(
             api_key=MISTRAL_API_KEY
         )
 
@@ -205,23 +207,33 @@ QUESTION :
 SQL :
 """
 
-        messages = [
-            ChatMessage(
-                role="user",
-                content=prompt,
-            )
-        ]
-
-        response = self.client.chat(
+        response = self.client.chat.complete(
             model=self.model,
-            messages=messages,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
             temperature=0,
         )
 
-        sql = response.choices[0].message.content.strip()
+        if not response.choices:
+            raise RuntimeError(
+                "L'API Mistral n'a retourné aucune réponse."
+            )
 
-        # Nettoyage au cas où le modèle renvoie malgré tout
-        # un bloc Markdown.
+        content = response.choices[0].message.content
+
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(
+                "L'API Mistral a retourné un contenu "
+                "vide ou non textuel."
+            )
+
+        sql = content.strip()
+
+        # Nettoyage des éventuels blocs Markdown
         sql = sql.replace("```sql", "")
         sql = sql.replace("```", "")
         sql = sql.strip()
