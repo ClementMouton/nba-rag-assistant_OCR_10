@@ -1,3 +1,11 @@
+# MÉTHODOLOGIE — Construction de l'index documentaire
+# Ce point d'entrée charge les sources puis exclut les fichiers Excel
+# structurés : ceux-ci sont traités séparément dans SQLite.
+# Les documents restants sont segmentés et encodés par VectorStoreManager
+# avant enregistrement de l'index FAISS et des chunks correspondants.
+# Les paramètres de découpage et d'embeddings influencent directement
+# les passages récupérables. Réindexer après modification du corpus.
+
 # indexer.py
 
 import argparse
