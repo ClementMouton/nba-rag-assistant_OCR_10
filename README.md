@@ -1,491 +1,183 @@
-# NBA Analyst AI — Assistant RAG hybride avec Mistral
+# NBA Analyst AI — Assistant NBA RAG + SQL
 
-Projet réalisé dans le cadre du parcours **Data Scientist / Machine Learning d'OpenClassrooms**.
+**Projet 10 — Parcours Data Scientist / Machine Learning, OpenClassrooms**
 
-L'objectif est de construire un assistant conversationnel capable d'exploiter plusieurs types de données NBA :
+Assistant conversationnel NBA développé avec **Python, Mistral AI, FAISS, SQLite et Streamlit**. Le projet fait évoluer un prototype de RAG documentaire vers un système capable de répondre à des questions textuelles, statistiques ou combinant les deux.
 
-- des contenus documentaires non structurés, notamment des discussions Reddit ;
-- des statistiques individuelles de joueurs sous forme tabulaire ;
-- des questions nécessitant de combiner informations documentaires et statistiques.
+> **Statut : preuve de concept (POC).** Les résultats d'évaluation sont issus de campagnes archivées sur un jeu de test ciblé. Ils ne constituent pas une validation pour la production.
 
-Le système repose sur une architecture hybride associant **RAG, génération SQL et routage automatique des questions**.
+## Fonctionnement
 
----
+Le routeur Mistral sélectionne une des quatre voies selon la question :
 
-## 1. Objectif du projet
-
-Un RAG classique est adapté aux questions portant sur du contenu textuel, mais moins pertinent lorsqu'une réponse nécessite un calcul ou un filtrage précis sur des données structurées.
-
-Le projet sépare donc deux sources d'information :
-
-- **Données non structurées** : extraction/OCR, chunking, embeddings Mistral, indexation FAISS et recherche sémantique.
-- **Données structurées** : statistiques NBA intégrées dans SQLite et interrogées via un SQL Tool.
-
-Un routeur choisit automatiquement le pipeline adapté à chaque question.
-
----
-
-## 2. Architecture générale
+| Route | Source | Exemple |
+|---|---|---|
+| `rag` | Discussions NBA indexées dans FAISS | Pourquoi les Wolves ont-ils impressionné pendant les playoffs ? |
+| `sql` | Statistiques de joueurs dans SQLite | Quels joueurs ont le meilleur NETRTG avec au moins 50 matchs ? |
+| `hybrid` | FAISS + SQLite | Quels joueurs des Timberwolves sont commentés et quelles sont leurs statistiques ? |
+| `out_of_scope` | Aucune | Question sans rapport avec la NBA |
 
 ```text
-                         Question utilisateur
-                                  |
-                                  v
-                         +------------------+
-                         | Routeur Mistral  |
-                         +------------------+
-                                  |
-             +--------------------+--------------------+
-             |                    |                    |
-             v                    v                    v
-            RAG                  SQL                HYBRID
-             |                    |                    |
-             v                    v             +------+------+
-      Recherche FAISS       SQL Tool            |             |
-             |                    |             v             v
-             v                    v           FAISS         SQLite
-     Chunks documentaires     SQLite             |             |
-             |                    |             +------+------+
-             +--------------------+--------------------+
-                                  |
-                                  v
-                              Mistral
-                                  |
-                                  v
-                         Réponse utilisateur
+Question utilisateur
+        |
+        v
+  Routeur Mistral
+        |
+        +--- RAG --------> Embeddings -> FAISS -> Extraits Reddit ---+
+        |                                                           |
+        +--- SQL --------> Génération SQL -> Validation -> SQLite ---+--> Mistral --> Réponse
+        |                                                           |
+        +--- HYBRID -----> FAISS + SQL ------------------------------+
+        |
+        +--- OUT_OF_SCOPE --> Refus contextualisé
 ```
 
-Une quatrième route, `OUT_OF_SCOPE`, identifie les questions ne relevant pas du périmètre NBA couvert.
+**Distinction des sources :** les données chiffrées proviennent des lignes SQLite ; les commentaires et opinions proviennent des documents. Le prompt demande au modèle de ne pas attribuer les chiffres d'un joueur à un autre, de ne pas confondre saison régulière et playoffs et de signaler les informations absentes. Ces consignes ne garantissent pas à elles seules l'absence d'erreurs dans la réponse finale.
 
----
+## Données et préparation
 
-## 3. Routes disponibles
+**Corpus documentaire :** discussions NBA issues de PDF, avec extraction de texte et recours à **EasyOCR** lorsque nécessaire. Les documents sont nettoyés, découpés en chunks, transformés en embeddings `mistral-embed`, puis indexés avec FAISS.
 
-### `rag`
+**Données structurées :** `inputs/regular NBA.xlsx`, importé dans `database/nba.db` (table `player_stats`) via `load_excel_to_db.py`. Les colonnes utilisées incluent notamment les joueurs, équipes, matchs, points, rebonds, passes, tentatives et réussite à trois points, TS% et NETRTG.
 
-Questions dont la réponse doit être recherchée dans les documents textuels.
+Configuration par défaut dans `utils/config.py` :
 
-> Quelles équipes ont impressionné les commentateurs pendant les playoffs ?
+| Paramètre | Valeur |
+|---|---|
+| Modèle de génération | `mistral-small-latest` |
+| Embeddings | `mistral-embed` |
+| `CHUNK_SIZE` | `1500` |
+| `CHUNK_OVERLAP` | `150` |
+| `SEARCH_K` | `5` |
 
-### `sql`
+Les modèles identifiés par un alias `latest` peuvent évoluer indépendamment du code.
 
-Questions nécessitant une interrogation précise des statistiques NBA.
+## Installation et exécution
 
-> Qui est le joueur le plus précis à trois points parmi ceux qui en ont tenté au moins 100 ?
+Prérequis : Python compatible avec `requirements.txt`, accès à l'API Mistral et données d'entrée du projet.
 
-### `hybrid`
-
-Questions nécessitant simultanément des informations documentaires et des statistiques structurées.
-
-> Quels joueurs des Minnesota Timberwolves sont mis en avant par les commentateurs et que montrent leurs statistiques individuelles disponibles ?
-
-### `out_of_scope`
-
-Questions ne correspondant pas au périmètre couvert par le système.
-
----
-
-## 4. Sources de données
-
-### Documents Reddit
-
-Les discussions Reddit constituent la principale source documentaire du RAG.
-
-Lorsque le texte d'un PDF n'est pas suffisamment exploitable directement, le pipeline utilise **EasyOCR**. Le texte obtenu est ensuite nettoyé, découpé et indexé.
-
-### Statistiques NBA
-
-Les statistiques individuelles sont fournies dans :
-
-```text
-inputs/regular NBA.xlsx
-```
-
-Le script `load_excel_to_db.py` valide les données puis les insère dans :
-
-```text
-database/nba.db
-```
-
-La table principale est `player_stats`.
-
----
-
-## 5. Pipeline d'indexation documentaire
-
-```bash
-python indexer.py
-```
-
-```text
-PDF
- |
- v
-Extraction texte
- |
- +---- texte insuffisant ----> OCR EasyOCR
- |
- v
-Nettoyage
- |
- v
-Chunking
- |
- v
-Embeddings Mistral
- |
- v
-Index FAISS
-```
-
-Configuration actuelle :
-
-```text
-CHUNK_SIZE = 1500
-CHUNK_OVERLAP = 150
-SEARCH_K = 5
-```
-
-Artefacts :
-
-```text
-vector_db/
-├── faiss_index.idx
-└── document_chunks.pkl
-```
-
-L'index actuellement utilisé contient **100 vecteurs pour 100 chunks documentaires**.
-
----
-
-## 6. Base SQLite et SQL Tool
-
-```bash
-python load_excel_to_db.py
-```
-
-Le script lit le fichier Excel, sélectionne les colonnes utiles, valide les données, crée SQLite et alimente `player_stats`.
-
-Exemple de requête générée :
-
-```sql
-SELECT
-    player,
-    team,
-    three_pa,
-    three_p_pct
-FROM player_stats
-WHERE three_pa >= 100
-ORDER BY three_p_pct DESC
-LIMIT 1;
-```
-
----
-
-## 7. Sécurisation des requêtes SQL
-
-Une requête générée par le LLM n'est pas exécutée directement.
-
-La validation contrôle notamment :
-
-- le caractère autorisé de la lecture ;
-- l'absence de modification des données ;
-- la présence d'une seule instruction ;
-- l'utilisation exclusive des tables autorisées.
-
-Les opérations `INSERT`, `UPDATE`, `DELETE`, `DROP` ou `PRAGMA` sont notamment rejetées.
-
----
-
-## 8. Modèles utilisés
-
-### Génération
-
-```text
-mistral-small-latest
-```
-
-Utilisé pour le routage, la génération SQL et la génération des réponses.
-
-### Embeddings
-
-```text
-mistral-embed
-```
-
-Utilisé pour la représentation vectorielle des chunks et des questions.
-
----
-
-## 9. Installation
-
-```bash
+```powershell
 git clone https://github.com/ClementMouton/nba-rag-assistant_OCR_10.git
 cd nba-rag-assistant_OCR_10
 python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-Sous Windows :
+Créer `.env` à partir de `.env.example`, puis renseigner :
 
-```bash
-.venv\Scripts\activate
-```
-
-Puis :
-
-```bash
-pip install -r requirements.txt
-```
-
-Créer un `.env` à partir de `.env.example` et renseigner au minimum :
-
-```text
+```dotenv
 MISTRAL_API_KEY=VOTRE_CLE_API
 ```
 
----
+Préparer les données si les artefacts ne sont pas déjà disponibles :
 
-## 10. Préparation des données
-
-Créer la base SQLite :
-
-```bash
+```powershell
 python load_excel_to_db.py
-```
-
-Construire l'index documentaire :
-
-```bash
 python indexer.py
 ```
 
-L'OCR peut prendre plusieurs minutes sur CPU.
+Lancer l'interface :
 
----
-
-## 11. Lancer l'application
-
-```bash
-streamlit run MistralChat.py
+```powershell
+python -m streamlit run MistralChat.py
 ```
 
-Le pipeline sélectionne automatiquement la route adaptée à la question.
+L'indexation peut nécessiter plusieurs minutes et des appels à l'API Mistral. Ne pas versionner le fichier `.env` ni sa clé API.
 
----
+## Sécurité et observabilité
 
-## 12. Évaluation
+Le SQL Tool valide les requêtes générées avant exécution : lecture seule, instruction unique et tables autorisées. Les opérations de modification (`INSERT`, `UPDATE`, `DELETE`, `DROP`, etc.) sont rejetées. Cette validation limite le risque d'exécution de SQL non autorisé, sans garantir la pertinence métier de chaque requête.
 
-### Tests unitaires
+Des traces **Logfire** sont intégrées au pipeline pour suivre notamment le routage, la récupération documentaire, l'interrogation SQL et la génération de réponse.
 
-```bash
-python -m pytest -v
-```
+## Évaluation
 
-Résultat actuel :
+L'évaluation compare le **prototype documentaire initial** et la **version enrichie RAG + SQL**, à partir de **12 questions archivées** : Q01–Q05 documentaires, Q06 hors périmètre, Q07–Q10 statistiques et Q11–Q12 hybrides.
 
-```text
-25 passed
-```
+### Questions documentaires — Q01 à Q05
 
-Les tests couvrent :
+| Métrique RAGAS | Prototype | Version enrichie |
+|---|---:|---:|
+| Faithfulness | 0,5002 | **0,8786** |
+| Context Precision | 0,8186 | 0,8578 |
+| Context Recall | 0,7000 | 0,7667 |
 
-- l'intégrité SQLite ;
-- les résultats statistiques de référence ;
-- la sécurité du SQL Tool ;
-- l'intégrité FAISS ;
-- la cohérence vecteurs/chunks ;
-- la cohérence des réponses hybrides RAG + SQL.
+**Interprétation :** la Faithfulness mesurée augmente sur les réponses archivées. Toutefois, **les cinq passages récupérés sont identiques et dans le même ordre entre les deux versions, pour chacune des cinq questions**. Les différences de Context Precision et Context Recall ont donc été produites par des campagnes de notation distinctes sur les mêmes contextes : **elles ne prouvent pas une amélioration du retrieval**.
 
-### Routeur
+Le juge RAGAS peut également manquer une erreur factuelle : Q05 obtient une Faithfulness de `1,0000` malgré une mauvaise attribution de Jaden Ivey aux Timberwolves.
 
-Le benchmark couvre les quatre routes.
+### SQL et routage
 
-```text
-12 / 12 routes correctement identifiées
-Accuracy : 100 %
-```
+| Contrôle | Résultat archivé | Portée |
+|---|---|---|
+| Réponses statistiques du prototype, Q07–Q10 | **0/4** | Lecture des réponses textuelles |
+| Résultats SQL de la version enrichie, Q07–Q10 | **4/4** | Comparaison automatique des lignes SQL aux valeurs attendues |
+| Routage | **12/12** | Questions connues, reprises ou très proches des exemples du prompt |
 
-Répartition :
+Ces résultats montrent une **validation fonctionnelle sur les cas étudiés**, pas une performance généralisable à des questions inédites. Le `4/4` SQL ne garantit pas que la synthèse textuelle reproduit toujours les données correctement.
 
-```text
-RAG          : Q01 à Q05
-OUT_OF_SCOPE : Q06
-SQL          : Q07 à Q10
-HYBRID       : Q11 à Q12
-```
-
-### SQL
-
-```text
-Questions statistiques Q07–Q10 :
-
-Prototype main : 0 / 4 réponses conformes
-Version develop : 4 / 4 réponses conformes
-```
-
----
-
-
-## 13. Évaluation RAGAS
-
-L'évaluation RAGAS mesure la qualité des réponses documentaires du système à partir de trois métriques :
-
-- **Faithfulness** : fidélité des affirmations générées aux contextes récupérés.
-- **Context Precision** : pertinence et classement des passages documentaires récupérés.
-- **Context Recall** : couverture des informations attendues par les contextes récupérés.
-
-### Comparaison du prototype et de la version enrichie
-
-La comparaison porte sur les **5 questions documentaires communes (Q01 à Q05)**.
-
-| Métrique | Prototype `main` | Version enrichie `develop` | Écart |
-|---|---:|---:|---:|
-| Faithfulness | 0,5002 | 0,8786 | +0,3784 |
-| Context Precision | 0,8186 | 0,8578 | +0,0392 |
-| Context Recall | 0,7000 | 0,7667 | +0,0667 |
-
-Les écarts sont exprimés en points sur une échelle de 0 à 1.
-
-### Interprétation
-
-La principale amélioration observée concerne la **Faithfulness**, qui passe de **0,5002 à 0,8786**. Les progrès en Context Precision et Context Recall sont plus modestes.
-
-Ces résultats suggèrent une meilleure fidélité des réponses aux documents récupérés, sans démontrer une amélioration aussi importante du retrieval lui-même.
-
-**Limite méthodologique :** les résultats des deux versions proviennent de campagnes d'évaluation distinctes. Les écarts observés ne peuvent donc pas être attribués avec certitude aux seules modifications de l'architecture.
-
-### Évaluation des questions hybrides
-
-Les questions Q11 et Q12 combinent recherche documentaire et interrogation SQL. Elles sont analysées séparément afin de ne pas mélanger les performances documentaires et statistiques.
+### Questions hybrides — Q11 et Q12
 
 | Question | Faithfulness | Context Precision | Context Recall |
 |---|---:|---:|---:|
 | Q11 | 0,3750 | 0,0000 | 0,0000 |
 | Q12 | 0,1316 | 0,0000 | 0,0000 |
 
-Ces scores révèlent des limites dans la justification documentaire des réponses hybrides. Ils doivent être interprétés avec prudence, car les métriques RAGAS ne mesurent pas directement l'exactitude des résultats SQL.
+Le juge reçoit **la réponse complète, mais seulement les passages FAISS comme contexte**, sans les lignes SQL. Les chiffres issus de SQLite peuvent donc être pénalisés à tort. En parallèle, une erreur de synthèse est bien observée : sur Q12, la réponse présente Banchero comme meilleur rebondeur d'Orlando avec 345 rebonds alors que les lignes SQL indiquent **490 rebonds pour Wendell Carter Jr.**
 
-### Response Relevancy
+Les scores hybrides ne sont pas agrégés aux moyennes documentaires.
 
-La métrique `ResponseRelevancy` a été expérimentée, mais elle retournait des valeurs `NaN` avec l'intégration Mistral/RAGAS utilisée. Elle n'a donc pas été retenue dans la comparaison finale.
+### Tests et reproductibilité
 
-### Documentation détaillée
-
-Le protocole, les scores individuels, l'analyse des erreurs et les limites méthodologiques sont documentés dans [docs/evaluation.md](docs/evaluation.md).
-
-Les résultats bruts sont disponibles dans :
-
-- `evaluation/results/ragas_baseline_comparison.csv`
-- `evaluation/results/ragas_hybrid_rag_scores.csv`
-
----
-
-## 14. Stratégie de validation
-
-```text
-Tests pytest
-    |
-    +--> intégrité SQLite
-    +--> sécurité SQL
-    +--> intégrité FAISS
-
-Benchmark routeur
-    |
-    +--> RAG / SQL / HYBRID / OUT_OF_SCOPE
-
-Évaluation SQL
-    |
-    +--> exactitude déterministe
-
-RAGAS
-    |
-    +--> qualité du retrieval
-    +--> fidélité au contexte
+```powershell
+python -m pytest -v
+python evaluation/evaluate_sql.py
 ```
 
----
+Un résultat de **25 tests passés** a été obtenu lors des vérifications du projet ; il ne constitue pas un résultat de CI actualisé à chaque commit.
 
-## 15. Structure du projet
+Les scripts RAGAS présents dans `evaluation/` **réévaluent des réponses archivées** et peuvent **écraser les CSV de sortie**. Ils ne constituent pas à eux seuls une nouvelle génération des réponses. Les scores peuvent varier selon le juge, ses paramètres et l'évolution des modèles.
+
+**Documentation et artefacts :**
+- [Rapport d'évaluation (DOCX)](docs/Rapport_mise_en_place_evaluation_RAG_NBA.docx)
+- [Protocole et résultats détaillés](docs/evaluation.md)
+- [Cas de test](evaluation/test_cases.json)
+- [Résultats archivés](evaluation/results/)
+- [Script de vérification SQL](evaluation/evaluate_sql.py)
+
+## Organisation du dépôt
 
 ```text
-OCR_Projet_10/
-│
-├── MistralChat.py
-├── indexer.py
-├── load_excel_to_db.py
-├── test_router.py
-├── test_sql_tool.py
-│
-├── inputs/
-├── database/
-│   └── nba.db
-├── vector_db/
-│   ├── faiss_index.idx
-│   └── document_chunks.pkl
-├── evaluation/
-│   ├── test_cases.json
-│   ├── run_ragas.py
-│   ├── run_ragas_hybrid.py
-│   ├── evaluate_sql.py
-│   └── results/
-├── tests/
-│   ├── test_hybrid_consistency.py
-│   ├── test_sql_database.py
-│   ├── test_sql_security.py
-│   └── test_vector_store.py   
+.
+├── MistralChat.py              # Interface Streamlit
+├── indexer.py                  # Préparation / indexation documentaire
+├── load_excel_to_db.py         # Import Excel vers SQLite
+├── inputs/                     # Documents et statistiques d'entrée
+├── database/                   # Base SQLite
+├── vector_db/                  # Index FAISS et chunks
 ├── utils/
-│   ├── config.py
-│   ├── rag_pipeline.py
-│   ├── sql_tool.py
-│   └── vector_store.py
-├── .env.example
+│   ├── config.py               # Configuration
+│   ├── rag_pipeline.py         # Routage, retrieval et génération
+│   ├── sql_tool.py             # Génération et validation SQL
+│   ├── vector_store.py         # Recherche vectorielle
+│   └── observability.py        # Instrumentation
+├── evaluation/                 # Jeux de test, scripts et archives
+├── tests/                      # Tests automatisés
+├── docs/
+│   ├── evaluation.md
+│   └── Rapport_mise_en_place_evaluation_RAG_NBA.docx
 ├── requirements.txt
+├── .env.example
 └── README.md
 ```
 
----
+## Limites et perspectives
 
-## 16. Limites actuelles
+Le POC présente plusieurs limites : corpus documentaire bruité, recherche sémantique parfois peu pertinente sur les questions hybrides, erreurs possibles de synthèse malgré des lignes SQL correctes, évaluation sur un petit ensemble de questions connues, dépendance aux quotas et à la disponibilité de Mistral.
 
-- Le retrieval documentaire peut encore être amélioré, notamment au regard du Context Recall.
-- EasyOCR est relativement lent sur CPU.
-- Le système dépend de la disponibilité, de la latence et des quotas de l'API Mistral.
-- La génération SQL reste dépendante de l'interprétation de la question par le LLM, malgré la validation de sécurité.
-- Le benchmark d'évaluation reste limité à un nombre restreint de questions.
+Les améliorations prioritaires seraient une **récupération documentaire plus ciblée** (reformulation, filtrage, reranking), une **vérification explicite des associations joueur–équipe–statistiques**, une **évaluation hybride séparant preuves SQL et preuves documentaires**, et un protocole de test avec questions inédites, répétitions et paramètres de juge contrôlés.
 
 ---
 
-## 17. Améliorations possibles
-
-- enrichir le jeu d'évaluation ;
-- optimiser le chunking et le retrieval ;
-- ajouter un reranker ;
-- adapter dynamiquement `SEARCH_K` ;
-- mesurer la latence par route ;
-- suivre les coûts API ;
-- ajouter du monitoring ;
-- mettre en cache certaines requêtes ;
-- renforcer la gestion des indisponibilités API.
-
----
-
-## 18. Technologies utilisées
-
-- Python
-- Mistral AI
-- FAISS
-- SQLite
-- Streamlit
-- EasyOCR
-- PyMuPDF
-- pandas
-- Pydantic
-- RAGAS
-- pytest
-- LangChain / intégrations Mistral
-
----
-
-## Auteur
-
-Projet réalisé par **Clément Mouton** dans le cadre du parcours OpenClassrooms Data Scientist / Machine Learning.
+**Auteur :** Clément Mouton — Projet OpenClassrooms, parcours Data Scientist / Machine Learning.
