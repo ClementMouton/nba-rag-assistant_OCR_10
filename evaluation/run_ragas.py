@@ -1,3 +1,11 @@
+# MÉTHODOLOGIE — Évaluation historique du prototype
+# Ce script note des réponses déjà archivées ; il ne les régénère pas.
+# Le commentaire interne sur « le premier test case » est obsolète :
+# prepare_dataset parcourt les résultats sans erreur.
+# ResponseRelevancy a retourné des NaN dans certaines évaluations.
+# Pour la comparaison finale Q01–Q05, consulter le script dédié.
+# Attention : l'exécution réécrit le CSV de sortie.
+
 import json
 from pathlib import Path
 
