@@ -31,3 +31,6 @@ ragas==0.4.3
 
 # Tests
 pytest==9.1.1
+
+# Observabilité
+logfire==5.6.0
