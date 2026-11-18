@@ -2,81 +2,120 @@
 
 ## 1. Objectif et périmètre
 
-Ce document présente l'évaluation du prototype initial de recherche augmentée par génération (RAG) et de sa version enrichie, associant recherche documentaire, interrogation de données structurées par SQL et routage des questions.
+Ce document présente l'évaluation d'un prototype initial de recherche augmentée par génération (RAG) et de sa version enrichie, associant recherche documentaire, interrogation de données structurées par SQL et routage des questions.
 
-L'objectif est de vérifier **ce que l'évolution de l'architecture améliore réellement**, tout en distinguant la qualité des réponses documentaires de l'exactitude des réponses statistiques. L'évaluation porte sur **12 questions (Q01 à Q12)**. Elle constitue une validation de preuve de concept (POC), et non une démonstration de robustesse en production.
+L'objectif est de mesurer les performances observées, d'identifier les apports de l'architecture hybride et de distinguer les améliorations démontrées des limites du protocole d'évaluation.
 
-Les deux versions comparées sont :
+L'évaluation porte sur **12 questions (Q01 à Q12)**. Elle constitue une validation fonctionnelle d'une preuve de concept (POC), et non une démonstration de robustesse en production.
 
-- **Prototype initial (`main`)** : traitement fondé sur le RAG documentaire.
-- **Version enrichie (`develop`)** : routage des requêtes et mobilisation de SQL pour les données structurées, en complément du RAG documentaire.
+Deux versions historiques sont comparées :
 
-> **Précaution de lecture :** les résultats ci-dessous correspondent aux réponses et évaluations archivées. Ils ne doivent pas être interprétés comme des mesures en temps réel des branches Git.
+- **Prototype initial (baseline)** : architecture fondée sur la recherche documentaire FAISS et la génération de réponses.
+- **Version enrichie (hybride)** : architecture associant routage, recherche documentaire FAISS et interrogation SQL des statistiques NBA.
 
-## 2. Jeu de test et méthode
+Les appellations *baseline* et *hybride* désignent ici les deux états fonctionnels du système au moment des évaluations. Elles ne correspondent pas aux branches Git actuelles, désormais fusionnées.
 
-Le jeu d'évaluation comporte plusieurs familles de questions :
+Les résultats présentés proviennent des réponses et évaluations archivées dans le dépôt.
 
-| Questions | Catégorie | Objet de l'évaluation | Méthode retenue |
-|---|---|---|---|
-| Q01–Q05 | Documentaires (simples, complexes, formulation bruitée) | Fidélité aux extraits, pertinence des contextes récupérés | RAGAS et examen qualitatif |
-| Q06 | Hors périmètre | Capacité à signaler l'absence d'information dans les sources | Examen qualitatif |
-| Q07–Q10 | Statistiques (simples et complexes) | Exactitude des résultats calculés à partir des données NBA | Comparaison aux réponses de référence |
-| Q11–Q12 | Hybrides (texte et statistiques) | Croisement de commentaires et de données chiffrées | Comparaison aux références et examen des justifications |
+## 2. Jeu de test et méthodologie
 
-Les questions et les réponses attendues sont définies dans `evaluation/test_cases.json`. Les réponses archivées des deux versions sont conservées dans `evaluation/results/baseline_results.json` et `evaluation/results/hybrid_results.json`.
+### 2.1. Composition du jeu de test
 
-### 2.1. Construction du jeu de test
+Le jeu d'évaluation comprend quatre catégories de questions :
 
-Le jeu de test a été construit pour couvrir les comportements attendus du système et les difficultés liées aux différentes sources. Il comprend cinq questions documentaires (Q01–Q05), dont une formulation volontairement bruitée ; une question hors périmètre (Q06) ; quatre questions statistiques avec filtres, classements ou calculs (Q07–Q10) ; et deux questions croisant commentaires textuels et statistiques individuelles (Q11–Q12).
+| Questions | Catégorie | Objectif |
+|---|---|---|
+| Q01–Q05 | Documentaires | Évaluer la pertinence des informations récupérées et la fidélité des réponses aux documents |
+| Q06 | Hors périmètre | Vérifier la capacité du système à reconnaître une question extérieure aux sources |
+| Q07–Q10 | Statistiques | Vérifier les calculs, filtres et classements issus des données NBA |
+| Q11–Q12 | Hybrides | Évaluer la combinaison de commentaires documentaires et de statistiques individuelles |
 
-Chaque question possède une réponse de référence établie à partir des sources du projet. Il s'agit d'une **évaluation fonctionnelle ciblée**, et non d'un échantillon statistiquement représentatif de toutes les requêtes possibles.
+Les questions et leurs références sont définies dans `evaluation/test_cases.json`.
+
+Les réponses archivées sont conservées dans :
+
+- `evaluation/results/baseline_results.json`
+- `evaluation/results/hybrid_results.json`
+
+Le jeu de test a été conçu pour couvrir les principales fonctionnalités du POC, notamment les requêtes documentaires complexes, les formulations bruitées, les classements statistiques et les questions combinant plusieurs sources.
+
+**Limite :** les douze questions constituent un échantillon fonctionnel ciblé. Elles ne sont pas statistiquement représentatives de l'ensemble des requêtes possibles.
 
 ### 2.2. Métriques RAGAS
 
-Trois métriques sont retenues pour **Q01–Q05** :
+Trois métriques principales sont retenues pour l'évaluation documentaire des questions Q01 à Q05.
 
-- **Faithfulness** : proportion des affirmations de la réponse jugées étayées par les contextes récupérés.
-- **Context Precision** (`llm_context_precision_with_reference`) : capacité à classer les contextes pertinents en bonne position, en utilisant la référence.
-- **Context Recall** (`context_recall`) : couverture des informations de la réponse de référence par les contextes récupérés.
+**Faithfulness**
 
-Les scores vont de **0 à 1** (plus le score est élevé, mieux c'est). Ce sont des jugements automatiques assistés par un modèle de langage : ils ne remplacent pas une vérification humaine de l'exactitude factuelle.
+Mesure la proportion des affirmations de la réponse que le juge considère comme étayées par les contextes fournis.
 
-Les questions SQL et hors périmètre ne sont **pas intégrées à la moyenne documentaire RAGAS**, car ces métriques ne mesurent pas directement l'exactitude d'un calcul SQL ou la qualité d'un refus.
+**Context Precision**
 
-### 2.3. Critères de réussite fonctionnelle
+Évalue le positionnement des passages pertinents parmi les contextes récupérés, à partir de la réponse de référence.
 
-- **Questions statistiques :** conformité des joueurs, de leur classement, des valeurs numériques et des filtres demandés à la réponse de référence.
-- **Question hors périmètre :** capacité à signaler que la réponse n'est pas présente dans les sources, sans présenter comme fondée une information non justifiée.
-- **Questions hybrides :** évaluation séparée de la conformité des statistiques et de la pertinence des affirmations issues des documents. Une réponse statistiquement correcte n'est pas nécessairement une réponse hybride entièrement satisfaisante.
+**Context Recall**
 
-### 2.4. Conditions de comparaison
+Mesure dans quelle proportion les informations nécessaires à la réponse de référence sont présentes dans les contextes récupérés.
 
-Les mêmes cinq questions documentaires et leurs références sont utilisées pour calculer les moyennes ci-dessous. Toutefois, les résultats du prototype et ceux de la version enrichie proviennent de **campagnes d'évaluation distinctes**. Les variations possibles du juge LLM et des conditions d'exécution empêchent d'attribuer avec certitude l'intégralité des écarts aux seules modifications du système.
+Les scores sont compris entre 0 et 1, une valeur élevée étant généralement préférable.
 
-Le recalcul documenté du prototype a été réalisé avec **RAGAS 0.4.3** et `mistral-small-latest` dans le dispositif d'évaluation. Le projet utilise également `mistral-small-latest` pour la génération. L'alias `latest` peut évoluer ; l'identité exacte des versions du modèle et de tous les paramètres des deux campagnes n'est pas établie.
+Ces métriques reposent sur un modèle de langage évaluateur. Elles doivent être interprétées comme des indicateurs automatiques, et non comme une validation humaine exhaustive.
 
-Le calcul du prototype a initialement rencontré une erreur de parsing pour la Faithfulness de Q01. **Cette seule métrique a été relancée**, avec un résultat de **0,571429**, puis intégrée au CSV `evaluation/results/ragas_baseline_comparison.csv`. Les moyennes présentées pour le prototype reposent ainsi sur les cinq questions, sans valeur manquante.
+La métrique `ResponseRelevancy`, présente dans une évaluation historique, a produit des valeurs `NaN`. Elle n'est pas retenue dans la comparaison principale.
 
-## 3. Résultats documentaires — Q01 à Q05
+### 2.3. Conditions d'évaluation
 
-| Métrique | Prototype `main` | Version enrichie `develop` | Écart absolu |
+Les évaluations utilisent les réponses archivées des deux versions du système.
+
+Pour les questions documentaires, les mêmes questions et réponses de référence sont utilisées.
+
+Le recalcul documenté de la baseline utilise RAGAS 0.4.3 et le modèle `mistral-small-latest`.
+
+L'alias `latest` peut évoluer dans le temps. L'identité exacte des versions du modèle et l'ensemble des paramètres des différentes campagnes ne sont pas entièrement établis.
+
+Les scores proviennent donc de campagnes distinctes, ce qui limite leur comparabilité stricte.
+
+Une erreur de parsing du juge RAGAS avait initialement empêché le calcul de la Faithfulness de Q01 pour la baseline.
+
+Cette seule métrique a été recalculée avec `evaluation/retry_baseline_q01.py`, donnant un score de **0,571429**, ensuite intégré au fichier de comparaison.
+
+## 3. Évaluation documentaire — Q01 à Q05
+
+### 3.1. Résultats comparatifs
+
+| Métrique | Baseline | Version hybride | Écart |
 |---|---:|---:|---:|
-| Faithfulness | **0,5002** | **0,8786** | **+0,3784** |
+| Faithfulness | 0,5002 | 0,8786 | +0,3784 |
 | Context Precision | 0,8186 | 0,8578 | +0,0392 |
 | Context Recall | 0,7000 | 0,7667 | +0,0667 |
 
-*Écarts exprimés en points sur l'échelle 0–1, et non en pourcentage relatif. Valeurs arrondies à quatre décimales.*
+Les écarts sont exprimés en points sur une échelle de 0 à 1.
 
-### 3.1. Interprétation
+La progression la plus importante concerne la Faithfulness.
 
-L'écart le plus important concerne la **Faithfulness** : dans cette évaluation, les réponses de la version enrichie sont davantage soutenues par les contextes fournis au juge. Les gains de **Context Precision** et de **Context Recall** sont plus limités.
+Les réponses documentaires de la version enrichie sont davantage considérées comme étayées par les contextes fournis au juge.
 
-Cette dissociation est importante : une réponse peut mieux exploiter les documents sans que la sélection des passages pertinents progresse dans les mêmes proportions. Les résultats suggèrent une amélioration de la fidélité documentaire **sur cet échantillon**, sans démontrer que le mécanisme de récupération est devenu systématiquement plus performant.
+En revanche, les variations de Context Precision et de Context Recall ne permettent pas de conclure à une amélioration effective du mécanisme de récupération.
 
-### 3.2. Faithfulness par question : comparaison des deux versions
+### 3.2. Vérification des passages récupérés
 
-| Question | Prototype `main` | Version enrichie `develop` |
+Une comparaison des résultats archivés montre que, pour chacune des cinq questions Q01 à Q05, **les cinq passages FAISS récupérés sont exactement identiques et apparaissent dans le même ordre dans les deux versions**.
+
+Cette observation est déterminante pour l'interprétation des résultats.
+
+Elle signifie que :
+
+- La version enrichie ne démontre aucune amélioration de la sélection des passages documentaires sur ces cinq questions.
+- Les écarts de Context Precision et de Context Recall ne peuvent pas être attribués à une modification des passages récupérés.
+- Ces écarts peuvent notamment provenir de la variabilité du modèle évaluateur ou des conditions d'évaluation.
+
+L'amélioration de Faithfulness constitue donc une **amélioration observée de la fidélité des réponses aux contextes**, telle que mesurée par RAGAS, et non une amélioration démontrée du retrieval.
+
+Il n'est pas possible d'attribuer causalement cette progression à une modification précise du système à partir des seules campagnes archivées.
+
+### 3.3. Faithfulness par question
+
+| Question | Baseline | Version hybride |
 |---|---:|---:|
 | Q01 | 0,5714 | 0,6154 |
 | Q02 | 0,9268 | 1,0000 |
@@ -85,9 +124,11 @@ Cette dissociation est importante : une réponse peut mieux exploiter les docume
 | Q05 | 0,4211 | 1,0000 |
 | **Moyenne** | **0,5002** | **0,8786** |
 
-La progression est observée sur les cinq questions, mais particulièrement sur Q03, Q04 et Q05. Q01 reste relativement faible dans les deux versions. Les valeurs proviennent de campagnes distinctes : il ne s'agit pas d'une mesure de causalité à conditions parfaitement contrôlées.
+Une progression est observée sur les cinq questions, particulièrement sur Q03, Q04 et Q05.
 
-### 3.3. Détail de la version enrichie
+Q01 demeure la question la moins bien évaluée en Faithfulness dans la version enrichie.
+
+### 3.4. Détail des scores documentaires de la version enrichie
 
 | Question | Faithfulness | Context Precision | Context Recall |
 |---|---:|---:|---:|
@@ -97,105 +138,317 @@ La progression est observée sur les cinq questions, mais particulièrement sur 
 | Q04 | 0,7778 | 1,0000 | 0,6667 |
 | Q05 | 1,0000 | 0,7556 | 0,5000 |
 
-Ces résultats révèlent une variabilité entre questions. En particulier, **Q05** obtient une Faithfulness de 1,0000 malgré une confusion factuelle relevée à la lecture de la réponse (attribution de Jaden Ivey aux Timberwolves). Ce cas illustre pourquoi une métrique automatique élevée **ne garantit pas une réponse entièrement correcte**.
+Ces résultats montrent une variabilité importante entre questions.
 
-## 4. Résultats fonctionnels — Q06 à Q12
+Ils doivent être complétés par une vérification qualitative, notamment pour détecter les erreurs d'attribution que le juge automatique peut ne pas identifier.
+
+## 4. Évaluation fonctionnelle — Q06 à Q12
 
 ### 4.1. Questions statistiques — Q07 à Q10
 
-Les quatre questions statistiques portent notamment sur les pourcentages de réussite à trois points, le True Shooting Percentage et le NETRTG, avec des contraintes de nombre minimal de tentatives ou de matchs.
+Les questions statistiques portent notamment sur :
 
-| Indicateur | Prototype `main` | Version enrichie `develop` |
+- Les pourcentages de réussite à trois points.
+- Les classements de joueurs.
+- Les seuils minimaux de tentatives ou de matchs joués.
+- Le True Shooting Percentage et le Net Rating.
+
+Les évaluations archivées présentent les résultats suivants :
+
+| Indicateur | Baseline | Version hybride |
 |---|---:|---:|
-| Réponses conformes aux références (Q07–Q10) | **0 / 4** | **4 / 4** |
+| Cas conformes selon le protocole utilisé | 0/4 | 4/4 |
 
-L'amélioration est nette sur ce sous-ensemble : le recours aux données structurées et à SQL permet de traiter des classements et des filtres numériques que le prototype documentaire ne résolvait pas correctement. **Ce résultat porte sur quatre cas de test**, et non sur l'ensemble des requêtes SQL possibles.
+**Ces résultats ne proviennent toutefois pas de méthodes d'évaluation strictement identiques.**
+
+Pour la baseline, le résultat 0/4 correspond à une appréciation manuelle des réponses textuelles générées par le prototype documentaire.
+
+Pour la version hybride, le résultat 4/4 provient de `evaluation/evaluate_sql.py`, qui compare les lignes de résultats SQL archivées aux valeurs de référence attendues.
+
+Cette évaluation valide donc les résultats structurés retournés par SQL sur les quatre cas considérés.
+
+Elle ne démontre pas automatiquement que les réponses finales rédigées par le modèle sont entièrement exactes.
+
+Les valeurs 0/4 et 4/4 décrivent deux observations distinctes et ne constituent pas une mesure comparative parfaitement symétrique.
+
+Elles soutiennent néanmoins l'intérêt de l'intégration de SQLite pour répondre à des questions nécessitant des calculs et classements statistiques.
 
 ### 4.2. Question hors périmètre — Q06
 
-Q06 interroge le système sur le Ballon d'Or de football 2024, information extérieure aux sources NBA fournies. L'analyse des réponses archivées indique que la version enrichie produit un **refus plus concis et mieux délimité**, tandis que le prototype avait tendance à ajouter des digressions. Cette appréciation est **qualitative** : aucun score chiffré de qualité du refus n'est revendiqué.
+La question Q06 concerne le Ballon d'Or de football 2024, information extérieure au corpus NBA.
+
+La version enrichie fournit un refus plus concis et mieux délimité que le prototype initial.
+
+Cette appréciation repose sur une analyse qualitative des réponses archivées.
+
+Aucun score quantitatif de qualité du refus n'est revendiqué.
 
 ### 4.3. Questions hybrides — Q11 et Q12
 
-Q11 et Q12 demandent de rapprocher les commentaires sur les **Minnesota Timberwolves** et le **Orlando Magic** de statistiques individuelles. Les réponses de la version enrichie fournissent des statistiques conformes aux références enregistrées. Il s’agit donc d’une **réussite statistique partielle au regard de la réponse hybride complète**. En revanche, l'appui documentaire des commentaires attribués aux joueurs demeure perfectible.
+Les questions hybrides demandent de rapprocher les commentaires documentaires des statistiques de joueurs.
 
-Les résultats RAGAS archivés pour ces deux questions doivent être interprétés avec prudence :
+Elles concernent notamment les Minnesota Timberwolves et l'Orlando Magic.
+
+La version enrichie mobilise les deux sources, mais les résultats montrent des limites importantes dans la synthèse finale.
+
+**Q11**
+
+La réponse combine des informations documentaires et des résultats statistiques.
+
+Cependant, les affirmations documentaires restent insuffisamment justifiées selon les résultats RAGAS archivés.
+
+**Q12**
+
+Une erreur factuelle est présente dans la réponse générée.
+
+Le système présente Paolo Banchero comme le meilleur rebondeur d'Orlando avec 345 rebonds.
+
+Or les résultats SQL archivés indiquent que **Wendell Carter Jr. possède 490 rebonds**, contre 345 pour Paolo Banchero.
+
+La valeur de 345 rebonds est correcte pour Banchero, mais le classement affirmé dans la réponse est incorrect.
+
+Ce cas montre qu'un résultat SQL correct ne garantit pas une interprétation correcte par le modèle de synthèse.
+
+### 4.4. Scores RAGAS hybrides
 
 | Question | Faithfulness | Context Precision | Context Recall |
 |---|---:|---:|---:|
 | Q11 | 0,3750 | 0,0000 | 0,0000 |
 | Q12 | 0,1316 | 0,0000 | 0,0000 |
 
-Ces scores signalent une faiblesse de la justification documentaire telle qu'évaluée, **sans suffire à invalider les résultats SQL**. Ils ne sont pas agrégés aux moyennes Q01–Q05, car ces questions combinent deux types de sources et nécessitent une grille d'évaluation spécifique.
+Ces résultats nécessitent une précaution méthodologique importante.
 
-## 5. Analyse des erreurs et limites observées
+Dans `evaluation/run_ragas_hybrid.py`, le juge RAGAS reçoit :
 
-### 5.1. Q05 — Faithfulness élevée et erreur d'attribution
+- La question utilisateur.
+- La réponse complète générée par le système.
+- Les passages documentaires récupérés par FAISS.
+- La réponse de référence.
 
-Q05, formulée volontairement avec des fautes (« pk les wolves ont impressioné pendant les playoff ? »), obtient une Faithfulness de **1,0000** pour `develop`. Pourtant, la réponse associe à tort **Jaden Ivey aux Timberwolves**, alors que le passage documentaire concerné traite des **Pistons**. Une Faithfulness élevée ne garantit donc ni l'exactitude factuelle ni la conformité à la référence. La vérification qualitative reste indispensable.
+**Les lignes de résultats SQL ne sont pas intégrées aux contextes transmis au juge.**
 
-### 5.2. Q11 et Q12 — Justification documentaire des réponses hybrides
+Par conséquent, les affirmations statistiques présentes dans la réponse peuvent ne pas être considérées comme justifiées, même lorsqu'elles reposent sur des résultats SQLite corrects.
 
-Les réponses aux questions hybrides contiennent des statistiques conformes aux références, mais les affirmations documentaires associées sont insuffisamment justifiées. Les scores archivés sont faibles (Faithfulness **0,3750** pour Q11 et **0,1316** pour Q12 ; Context Precision et Context Recall **0,0000** pour les deux).
+Les faibles scores de Faithfulness ne permettent donc pas, à eux seuls, de mesurer correctement la qualité statistique des réponses hybrides.
 
-Ces métriques doivent être interprétées prudemment : elles ne mesurent pas nécessairement correctement une réponse mêlant SQL et documents, notamment lorsque les résultats SQL ne figurent pas parmi les contextes transmis au juge. Elles ne permettent pas, à elles seules, d'invalider les résultats numériques.
+Ils ne doivent cependant pas être ignorés : l'erreur factuelle identifiée dans Q12 montre qu'il existe également des problèmes réels de synthèse.
 
-### 5.3. Qualité des sources
+Ces questions nécessitent une évaluation distincte de la récupération documentaire, de l'exactitude SQL et de la cohérence de la réponse finale.
 
-Les PDF issus de discussions Reddit comportent du bruit d'extraction : éléments d'interface, fragments de pages, texte mal segmenté et contenus sans rapport avec les questions. Ces défauts peuvent affecter à la fois la récupération et la génération.
+## 5. Analyse des erreurs observées
+
+### 5.1. Q05 — Erreur d'attribution malgré une Faithfulness maximale
+
+La question Q05 est volontairement formulée avec des fautes :
+
+« pk les wolves ont impressioné pendant les playoff ? »
+
+La version enrichie obtient une Faithfulness de 1,0000.
+
+Pourtant, la réponse attribue à tort Jaden Ivey aux Minnesota Timberwolves, alors que le joueur appartient aux Detroit Pistons.
+
+Cette erreur illustre une limite des métriques automatiques : une réponse peut être jugée fidèle aux passages fournis tout en contenant une attribution factuelle incorrecte.
+
+### 5.2. Q12 — Erreur de classement dans la synthèse hybride
+
+Le cas Q12 met en évidence une erreur différente.
+
+Les données SQL contiennent les valeurs nécessaires pour identifier le meilleur rebondeur d'Orlando.
+
+Le modèle utilise cependant une valeur correcte pour Paolo Banchero et en tire une conclusion incorrecte sur son classement.
+
+Cette erreur intervient au niveau de la synthèse de la réponse, et non nécessairement au niveau de l'exécution SQL.
+
+Elle justifie l'ajout futur de contrôles de cohérence entre les lignes structurées et les affirmations générées.
+
+### 5.3. Qualité des sources documentaires
+
+Les PDF issus des discussions Reddit contiennent des éléments susceptibles de dégrader la qualité du système :
+
+- Éléments d'interface et bruit d'extraction.
+- Fragments de commentaires.
+- Informations sans rapport direct avec les questions.
+- Risques de confusion entre joueurs, équipes et discussions.
+
+Ces problèmes peuvent affecter la segmentation, la récupération des passages et leur interprétation.
 
 ### 5.4. Enseignements
 
-Ces erreurs montrent qu'il faut distinguer **conformité à la référence**, **fidélité aux contextes récupérés** et **traçabilité des affirmations**. Le traitement SQL apporte un gain clair sur les questions structurées, mais la fiabilité documentaire demeure un axe d'amélioration prioritaire.
+Les erreurs observées soulignent la nécessité de distinguer trois dimensions :
+
+1. **La qualité de la récupération** : les passages nécessaires sont-ils disponibles ?
+2. **L'exactitude des données structurées** : les résultats SQL correspondent-ils aux références ?
+3. **La qualité de la synthèse** : la réponse finale interprète-t-elle correctement les informations fournies ?
+
+Une amélioration sur l'une de ces dimensions ne garantit pas une amélioration sur les autres.
 
 ## 6. Limites méthodologiques
 
-**Taille et représentativité du jeu de test.** Les douze questions couvrent les principales capacités du POC, sans constituer un échantillon représentatif des requêtes possibles. Les taux observés ne peuvent pas être généralisés à une utilisation en production.
+### 6.1. Taille du jeu de test
 
-**Variabilité des métriques automatiques.** Les métriques RAGAS font intervenir un modèle de langage juge. Les scores peuvent varier selon sa configuration et les conditions d'exécution ; une seule évaluation ne permet pas de quantifier cette variabilité.
+Le jeu comprend seulement douze questions.
 
-**Comparabilité des campagnes.** Les mêmes cinq questions documentaires et leurs références sont utilisées, mais les résultats proviennent de campagnes distinctes dont l'identité complète des paramètres n'a pas été établie. Les écarts sont des **améliorations observées**, non une preuve causale de l'effet des modifications.
+Il permet une validation fonctionnelle ciblée, mais ne constitue pas un échantillon représentatif des usages possibles.
 
-**Absence de répétitions.** Chaque version est représentée par une réponse archivée par question. Il n'est pas possible de mesurer la stabilité de génération ni de calculer des intervalles de confiance fiables sur ces seules observations.
+Les résultats ne peuvent pas être extrapolés à une utilisation en production.
 
-**Périmètre des performances.** L'évaluation ne permet pas de conclure sur les coûts, la latence en charge, la concurrence d'utilisateurs ou la robustesse en production.
+### 6.2. Comparabilité des campagnes documentaires
 
-### 6.1. Scores historiques non retenus dans la comparaison principale
+Les évaluations ont été réalisées lors de campagnes distinctes.
 
-Une évaluation antérieure du prototype a produit **Faithfulness 0,2864**, **Context Precision 0,3412**, **Context Recall 0,3472** et **Answer Relevancy `NaN`**. Le périmètre et le protocole exacts n'ont pas été suffisamment reconstitués. Ces valeurs sont conservées pour l'historique, mais ne sont pas utilisées comme baseline dans la comparaison principale.
+Même lorsque les questions, références et passages récupérés sont identiques, les variations du juge LLM peuvent influencer les scores.
 
-Pour renforcer le protocole, il conviendrait de réévaluer les deux versions lors d'une même campagne, avec un juge et une configuration identiques, plusieurs générations par question et un jeu de test élargi.
+Les différences de métriques ne doivent pas être considérées comme des preuves causales de l'effet des modifications architecturales.
+
+### 6.3. Comparabilité des évaluations SQL
+
+La baseline a été évaluée à partir des réponses textuelles.
+
+La version enrichie a été évaluée à partir des résultats SQL archivés.
+
+Une comparaison rigoureuse nécessiterait d'appliquer une même grille aux réponses finales des deux versions.
+
+### 6.4. Biais du jeu de routage
+
+Les douze questions utilisées pour tester le routage sont identiques ou très proches de certains exemples présents dans les prompts.
+
+De plus, plusieurs questions statistiques sont représentées dans les exemples fournis au modèle de génération SQL.
+
+Le résultat de routage de **12/12 sur les cas connus** démontre le bon fonctionnement du système sur ces exemples, mais ne permet pas de conclure à sa capacité de généralisation sur des questions inédites.
+
+### 6.5. Évaluation incomplète des réponses hybrides
+
+Le juge RAGAS ne reçoit pas les lignes SQL comme contexte de justification.
+
+Le protocole ne mesure donc pas complètement la fidélité des réponses hybrides à l'ensemble des sources utilisées.
+
+Une évaluation plus complète devrait transmettre les résultats structurés pertinents et vérifier séparément les affirmations numériques.
+
+### 6.6. Variabilité et absence de répétitions
+
+Les réponses archivées ne permettent pas d'estimer la stabilité des générations sur plusieurs exécutions.
+
+Les métriques ne sont pas accompagnées d'intervalles de confiance.
+
+L'alias `mistral-small-latest` peut également évoluer entre deux campagnes.
+
+### 6.7. Performances opérationnelles
+
+L'évaluation ne couvre pas de manière systématique :
+
+- La latence sous charge.
+- Les coûts d'inférence.
+- La concurrence entre utilisateurs.
+- La robustesse à grande échelle.
+- La résistance à des formulations inédites ou adversariales.
+
+Ces dimensions restent hors du périmètre de la validation réalisée.
+
+### 6.8. Scores historiques non retenus
+
+Une évaluation antérieure de la baseline a produit les résultats suivants :
+
+| Métrique | Score historique |
+|---|---:|
+| Faithfulness | 0,2864 |
+| Context Precision | 0,3412 |
+| Context Recall | 0,3472 |
+| Answer Relevancy | NaN |
+
+Le périmètre exact de cette campagne n'a pas été suffisamment reconstitué.
+
+Ces résultats sont conservés pour assurer la traçabilité, mais ne sont pas utilisés dans la comparaison principale.
 
 ## 7. Perspectives d'amélioration
 
-### 7.1. Améliorer la récupération documentaire
+### 7.1. Améliorer la préparation documentaire
 
-Les difficultés sur Q11 et Q12 justifient l'expérimentation d'un **reranking**, d'une meilleure segmentation des documents et d'un nettoyage plus approfondi des PDF. Ces pistes restent à tester et ne sont pas présentées comme des améliorations déjà obtenues.
+Un nettoyage plus approfondi des PDF pourrait réduire le bruit documentaire.
 
-### 7.2. Renforcer la vérification factuelle et la traçabilité
+Une expérimentation sur les paramètres de chunking et l'ajout d'un reranking pourraient également être envisagés.
 
-L'erreur de Q05 appelle un contrôle plus strict des associations entre joueurs, équipes et commentaires. Les réponses pourraient distinguer explicitement les informations provenant de **SQL** de celles provenant des **documents**, en rattachant chaque affirmation aux sources qui la soutiennent.
+Ces pistes ne sont pas présentées comme des améliorations déjà démontrées.
 
-### 7.3. Renforcer le protocole d'évaluation
+### 7.2. Renforcer la vérification factuelle
 
-Un jeu de test élargi devrait couvrir davantage de reformulations, d'ambiguïtés et de cas limites. Une campagne comparative commune aux deux versions, idéalement répétée, ainsi que l'automatisation de l'évaluation faciliteraient le suivi des performances après chaque modification.
+Les erreurs Q05 et Q12 justifient des contrôles supplémentaires :
+
+- Vérification des associations entre joueurs et équipes.
+- Contrôle des classements et valeurs numériques issus de SQL.
+- Vérification de la cohérence entre résultats structurés et réponse générée.
+- Attribution explicite des affirmations aux sources utilisées.
+
+### 7.3. Adapter l'évaluation hybride
+
+Une évolution du protocole pourrait combiner :
+
+- Des métriques documentaires RAGAS.
+- Une comparaison déterministe des résultats SQL.
+- Une vérification des affirmations numériques dans les réponses finales.
+- Une évaluation humaine de la cohérence des synthèses hybrides.
+
+Cette séparation permettrait d'identifier plus précisément les erreurs de récupération, d'exécution et de génération.
+
+### 7.4. Renforcer la robustesse du protocole
+
+Une campagne future devrait inclure davantage de questions inédites, de reformulations, de cas limites et de répétitions.
+
+L'utilisation d'un modèle juge fixé à une version précise faciliterait également la comparaison des résultats.
 
 ## 8. Conclusion
 
-Sur le jeu de test retenu, la version enrichie présente une **amélioration observée de la Faithfulness documentaire** (**0,5002 → 0,8786** sur Q01–Q05) et un **gain fonctionnel marqué sur les questions statistiques** (**0/4 → 4/4 réponses conformes** sur Q07–Q10). Le routage et l'interrogation SQL constituent les apports les plus directement démontrables de l'évolution architecturale.
+L'évaluation met en évidence plusieurs apports de la version enrichie du système RAG NBA.
 
-Les gains de récupération documentaire sont plus modestes et des erreurs factuelles ou d'attribution subsistent, en particulier dans les réponses hybrides. L'évaluation soutient l'intérêt du POC, mais ne démontre ni une fiabilité générale ni une aptitude immédiate à la production.
+**Sur les questions documentaires**, la Faithfulness moyenne observée progresse de **0,5002 à 0,8786**.
+
+Cette progression concerne les réponses évaluées, mais ne démontre pas une amélioration de la récupération : les cinq passages FAISS utilisés pour chaque question Q01–Q05 sont identiques dans les deux versions.
+
+**Sur les questions statistiques**, la version enrichie obtient **4/4 résultats SQL conformes aux références** sur les cas Q07–Q10.
+
+Ce résultat soutient l'intérêt de l'intégration de données structurées, mais il n'est pas directement comparable au 0/4 obtenu par appréciation manuelle des réponses textuelles du prototype.
+
+**Sur les questions hybrides**, les résultats restent plus contrastés.
+
+La combinaison de SQL et de recherche documentaire fonctionne techniquement, mais la synthèse peut produire des erreurs factuelles, comme le classement incorrect identifié dans Q12.
+
+Le protocole RAGAS présente également une limite : les résultats SQL ne sont pas fournis au juge comme contextes justificatifs.
+
+Le POC démontre ainsi l'intérêt d'une architecture combinant recherche documentaire et interrogation SQL, tout en mettant en évidence les besoins de vérification factuelle, de traçabilité et d'amélioration du protocole d'évaluation.
+
+Les résultats ne permettent pas de conclure à une fiabilité générale du système ni à son aptitude immédiate à une utilisation en production.
 
 ## 9. Traçabilité et reproductibilité
+
+Les fichiers suivants permettent de retrouver les questions, les réponses, les évaluations et les résultats archivés.
 
 | Ressource | Rôle |
 |---|---|
 | `evaluation/test_cases.json` | Questions, catégories et réponses de référence |
-| `evaluation/results/baseline_results.json` | Réponses archivées du prototype |
+| `evaluation/results/baseline_results.json` | Réponses archivées du prototype initial |
 | `evaluation/results/hybrid_results.json` | Réponses archivées de la version enrichie |
-| `evaluation/results/ragas_baseline_comparison.csv` | Scores documentaires recalculés du prototype, Q01–Q05 (à conserver dans le dépôt) |
-| `evaluation/results/ragas_hybrid_rag_scores.csv` | Scores RAGAS archivés de la version enrichie, dont Q01–Q05 et Q11–Q12 |
-| `evaluation/run_ragas_baseline_comparison.py` | Script de recalcul de la baseline documentaire |
-| `evaluation/retry_baseline_q01.py` | Recalcul ciblé de la Faithfulness de Q01 |
+| `evaluation/results/ragas_baseline_scores.csv` | Résultats historiques RAGAS de la baseline |
+| `evaluation/results/ragas_baseline_comparison.csv` | Résultats documentaires recalculés de la baseline |
+| `evaluation/results/ragas_hybrid_rag_scores.csv` | Scores RAGAS documentaires et hybrides |
+| `evaluation/results/ragas_hybrid_sql_scores.csv` | Résultats archivés associés à l'évaluation SQL |
+| `evaluation/results/sql_evaluation.json` | Comparaisons fonctionnelles des résultats SQL |
+| `evaluation/run_ragas.py` | Script historique d'évaluation de la baseline |
+| `evaluation/run_ragas_baseline_comparison.py` | Recalcul des scores documentaires Q01–Q05 |
+| `evaluation/retry_baseline_q01.py` | Recalcul ciblé de Faithfulness pour Q01 |
+| `evaluation/run_ragas_hybrid.py` | Évaluation RAGAS des réponses de la version enrichie |
+| `evaluation/evaluate_sql.py` | Vérification des résultats SQL archivés |
+| `utils/rag_pipeline.py` | Routage et orchestration des réponses |
+| `utils/vector_store.py` | Indexation et recherche FAISS |
+| `utils/sql_tool.py` | Génération, validation et exécution des requêtes SQL |
+| `docs/Rapport_mise_en_place_evaluation_RAG_NBA.docx` | Rapport de synthèse méthodologique et critique |
 
-Les réponses et scores archivés permettent de retracer les calculs, sans garantir une reproduction strictement identique : le juge LLM et l’alias `mistral-small-latest` peuvent évoluer.
+### Précautions de reproduction
+
+Les scripts d'évaluation RAGAS relisent les réponses archivées. Ils ne reproduisent pas nécessairement la génération initiale des réponses.
+
+Certains scripts réécrivent leurs fichiers CSV ou JSON de sortie.
+
+Il est donc recommandé de travailler sur une copie du dépôt et de conserver les résultats archivés avant toute nouvelle exécution.
+
+Les métriques faisant intervenir un modèle juge, leur reproduction numérique exacte n'est pas garantie, notamment lorsque l'alias `mistral-small-latest` désigne une version différente du modèle.
+
+Les résultats présentés dans ce document correspondent aux campagnes archivées et doivent être interprétés dans les limites méthodologiques décrites précédemment.
