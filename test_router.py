@@ -1,3 +1,8 @@
+# MÉTHODOLOGIE — Vérification ciblée du routage
+# Les questions de test couvrent les routes prévues par le système.
+# Certains exemples sont présents ou proches des prompts du routeur :
+# un score parfait ici ne démontre pas la généralisation à l'inédit.
+
 import json
 from pathlib import Path
 
