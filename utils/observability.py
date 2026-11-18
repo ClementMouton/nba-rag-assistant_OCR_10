@@ -12,7 +12,6 @@ logfire.configure(
     service_name="nba-rag-assistant",
     send_to_logfire="if-token-present",
     inspect_arguments=False,
-    scrubbing=True,
 )
 
 

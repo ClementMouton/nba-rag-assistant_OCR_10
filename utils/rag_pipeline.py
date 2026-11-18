@@ -599,8 +599,9 @@ ROUTE :
         # 1. Routage
         # ----------------------------------------------------
 
-        with trace_step("nba.routing"):
-            route = self.route_question(question) 
+        with trace_step("nba.routing") as span:
+            route = self.route_question(question)
+            span.set_attribute("nba.route", route) 
 
         if route == "out_of_scope":
 
@@ -638,8 +639,13 @@ ROUTE :
             "hybrid",
         }:
 
-            with trace_step("nba.faiss_retrieval", top_k=SEARCH_K):
+            with trace_step("nba.faiss_retrieval", top_k=SEARCH_K) as span:
                 search_results = self.retrieve(question)
+
+                span.set_attribute(
+                    "nba.documents_retrieved",
+                    len(search_results),
+                )
 
             rag_context = self.format_rag_context(
                 search_results
@@ -661,8 +667,18 @@ ROUTE :
 
             try:
 
-                with trace_step("nba.sql_query"):
+                with trace_step("nba.sql_query") as span:
                     sql_result = self.sql_tool.ask(question)
+
+                    span.set_attribute(
+                        "nba.sql_rows",
+                        len(sql_result.get("results") or []),
+                    )
+
+                    span.set_attribute(
+                        "nba.sql_has_error",
+                        bool(sql_result.get("error")),
+                    )
 
                 sql_context = self.format_sql_context(
                     sql_result
@@ -782,6 +798,28 @@ ROUTE :
             "sql_error": sql_error,
         }
 
-        def ask_traced(self, question: str) -> dict[str, Any]:
-            with trace_step("nba.question_processing"):
-                return self.ask(question)
+    def ask_traced(self, question: str) -> dict[str, Any]:
+        with trace_step("nba.question_processing") as span:
+            result = self.ask(question)
+
+            span.set_attribute(
+                "nba.route",
+                result["route"],
+            )
+
+            span.set_attribute(
+                "nba.documents_retrieved",
+                len(result.get("contexts") or []),
+            )
+
+            span.set_attribute(
+                "nba.sql_rows",
+                len(result.get("sql_results") or []),
+            )
+
+            span.set_attribute(
+                "nba.sql_has_error",
+                bool(result.get("sql_error")),
+            )
+
+            return result

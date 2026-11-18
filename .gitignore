@@ -3,6 +3,7 @@ venv/
 env/
 ENV/
 .venv/
+.env/
 
 # Fichiers de configuration contenant des informations sensibles
 .env
