@@ -1,3 +1,12 @@
+# MÉTHODOLOGIE — Interrogation de statistiques structurées
+# Le modèle propose du SQL à partir du schéma de player_stats et d'exemples.
+# La requête passe ensuite par des contrôles applicatifs avant exécution.
+# Les résultats SQLite sont la source chiffrée à privilégier dans la réponse.
+# Attention : validation de la syntaxe/lecture seule et exactitude du
+# classement métier sont deux contrôles différents. Le modèle de synthèse
+# peut encore mal attribuer ou interpréter des lignes SQL correctes.
+# Les exemples few-shot recoupent certains cas du benchmark de routage/SQL.
+
 
 import logging
 import re
