@@ -1,3 +1,8 @@
+# MÉTHODOLOGIE — Cohérence des réponses hybrides
+# Ces tests contrôlent des invariants et comportements attendus
+# du rapprochement entre données documentaires et statistiques.
+# Ils ne prouvent pas l'absence d'erreurs de synthèse en production.
+
 import pytest
 
 from utils.rag_pipeline import RAGPipeline
