@@ -1,3 +1,8 @@
+# MÉTHODOLOGIE — Vérification ciblée du SQL Tool
+# Les contrôles exercés ici concernent les comportements définis
+# dans ce script ; ils ne remplacent pas une évaluation complète
+# de l'exactitude métier des réponses rédigées par le modèle.
+
 from utils.rag_pipeline import RAGPipeline
 
 
