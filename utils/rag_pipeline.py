@@ -5,24 +5,17 @@ from typing import Any
 
 from mistralai import Mistral
 
-from .config import (
-    MISTRAL_API_KEY,
-    MODEL_NAME,
-    SEARCH_K,
-)
+from .config import MISTRAL_API_KEY, MODEL_NAME, SEARCH_K
 from .vector_store import VectorStoreManager
 from .sql_tool import SQLTool
 from .observability import trace_step
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(module)s - %(message)s",
-)
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# Prompt de réponse
+# Prompt de génération
 # ============================================================
 
 SYSTEM_PROMPT = """Tu es 'NBA Analyst AI', un assistant expert sur la ligue de basketball NBA.
@@ -117,6 +110,15 @@ statistique, n'attribue pas la statistique.
 12. Ne fusionne jamais deux joueurs différents même si leurs noms,
 leurs équipes, leurs rôles ou leur contexte documentaire semblent liés.
 
+13. Ne déduis pas automatiquement la qualité défensive individuelle
+d'un joueur à partir de son NETRTG.
+
+14. Distingue les statistiques de saison régulière des commentaires
+sur les playoffs. Ne prétends pas qu'elles mesurent la même période.
+
+15. Si les documents ne permettent pas d'expliquer les statistiques,
+présente les deux sources séparément et indique cette limite.
+
 ---
 
 {context_str}
@@ -131,75 +133,18 @@ RÉPONSE DE L'ANALYSTE NBA:"""
 
 
 # ============================================================
-# Pipeline
+# Prompt de routage
 # ============================================================
 
-class RAGPipeline:
+ROUTING_PROMPT = """Tu es le routeur d'un système de question-réponse
+spécialisé sur la NBA.
 
-    def __init__(self):
+Classe la question dans UNE SEULE des quatre catégories suivantes :
 
-        if not MISTRAL_API_KEY:
-            raise ValueError(
-                "La clé API Mistral (MISTRAL_API_KEY) n'est pas définie."
-            )
-
-        self.client = Mistral(
-            api_key=MISTRAL_API_KEY
-        )
-
-        self.model = MODEL_NAME
-
-        # ----------------------------------------------------
-        # Vector Store
-        # ----------------------------------------------------
-
-        self.vector_store = VectorStoreManager()
-
-        if (
-            self.vector_store.index is None
-            or not self.vector_store.document_chunks
-        ):
-            raise RuntimeError(
-                "L'index FAISS ou les chunks n'ont pas pu être chargés."
-            )
-
-        # ----------------------------------------------------
-        # SQL Tool
-        # ----------------------------------------------------
-
-        self.sql_tool = SQLTool()
-
-        logging.info(
-            "RAGPipeline initialisé avec %s vecteurs et SQLTool actif.",
-            self.vector_store.index.ntotal,
-        )
-
-    # ========================================================
-    # Routage
-    # ========================================================
-
-    def route_question(self, question: str) -> str:
-        """
-        Détermine quelle source doit être utilisée pour répondre.
-
-        Routes possibles :
-        - rag : documents textuels non structurés
-        - sql : statistiques NBA structurées
-        - hybrid : combinaison documents + statistiques
-        - out_of_scope : question hors du périmètre NBA
-        """
-
-        prompt = f"""
-Tu es le routeur d'un système de question-réponse spécialisé
-sur la NBA.
-
-Tu dois classer la question de l'utilisateur dans UNE SEULE
-des quatre catégories suivantes :
-
-RAG
-SQL
-HYBRID
-OUT_OF_SCOPE
+rag
+sql
+hybrid
+out_of_scope
 
 
 ============================================================
@@ -210,18 +155,13 @@ Choisis RAG lorsque la réponse doit être recherchée dans les
 documents textuels du corpus.
 
 Cela concerne notamment :
-
 - commentaires de fans ;
-- opinions ;
-- débats ;
+- opinions et débats ;
 - réactions ;
 - explications présentes dans les documents ;
 - discussions sur les playoffs ;
 - faits ou événements NBA décrits dans les documents ;
-- questions historiques NBA lorsque les statistiques de la
-base structurée actuelle ne permettent pas d'y répondre.
-
-IMPORTANT :
+- questions historiques NBA non couvertes par la base SQL.
 
 La simple présence du nom d'un joueur ou d'une équipe ne
 justifie PAS l'utilisation de SQL.
@@ -231,41 +171,26 @@ Exemples :
 Question :
 Quelles équipes ont impressionné les commentateurs pendant
 les playoffs ?
-
-Route :
-RAG
-
+Route : rag
 
 Question :
 Pourquoi certains fans pensent-ils qu'une finale entre les
 Pacers et le Thunder pourrait être moins suivie ?
-
-Route :
-RAG
-
+Route : rag
 
 Question :
 Pourquoi Reggie Miller est-il présenté comme une première
 option particulièrement efficace en playoffs ?
-
-Route :
-RAG
-
+Route : rag
 
 Question :
 Une équipe NBA a-t-elle déjà joué les trois premiers tours
 sans avantage du terrain avant de l'obtenir en Finales ?
-
-Route :
-RAG
-
+Route : rag
 
 Question :
-Pourquoi les Wolves ont-ils impressionné pendant les
-playoffs ?
-
-Route :
-RAG
+Pourquoi les Wolves ont-ils impressionné pendant les playoffs ?
+Route : rag
 
 
 ============================================================
@@ -277,7 +202,6 @@ Choisis SQL UNIQUEMENT lorsque la question peut être résolue
 présentes dans la base structurée.
 
 La base contient notamment :
-
 - joueur ;
 - équipe ;
 - matchs joués ;
@@ -289,48 +213,30 @@ La base contient notamment :
 - True Shooting Percentage ;
 - NETRTG.
 
-SQL est particulièrement adapté aux :
-
-- classements ;
-- maximums ou minimums ;
-- top N ;
-- filtres numériques ;
-- seuils ;
-- comparaisons statistiques ;
-- recherche d'une valeur statistique.
+SQL est adapté aux classements, maximums, minimums,
+top N, filtres numériques, seuils et comparaisons statistiques.
 
 Exemples :
 
 Question :
 Quel joueur ayant tenté au moins 100 tirs à 3 points possède
 le meilleur pourcentage de réussite à 3 points ?
-
-Route :
-SQL
-
+Route : sql
 
 Question :
 Quel joueur ayant disputé au moins 50 matchs possède le
 meilleur True Shooting Percentage ?
-
-Route :
-SQL
-
+Route : sql
 
 Question :
 Quels sont les cinq joueurs ayant tenté au moins 100 tirs à
 3 points avec le meilleur pourcentage de réussite ?
-
-Route :
-SQL
-
+Route : sql
 
 Question :
 Parmi les joueurs ayant disputé au moins 50 matchs, quels
 sont les cinq joueurs ayant le meilleur NETRTG ?
-
-Route :
-SQL
+Route : sql
 
 
 ============================================================
@@ -339,9 +245,7 @@ SQL
 
 Choisis HYBRID uniquement si répondre correctement nécessite
 À LA FOIS :
-
 1. des informations provenant des documents textuels ;
-ET
 2. des statistiques provenant de la base SQL.
 
 Les deux sources doivent réellement être nécessaires.
@@ -355,29 +259,28 @@ Question :
 Quels joueurs des Minnesota Timberwolves sont mis en avant
 par les commentateurs et que montrent leurs statistiques
 individuelles disponibles ?
-
-Route :
-HYBRID
-
+Route : hybrid
 
 Question :
 Quels joueurs du Orlando Magic sont mis en avant par les
 commentateurs et que montrent leurs statistiques
 individuelles disponibles ?
+Route : hybrid
 
-Route :
-HYBRID
+Question :
+Quelles sont les statistiques d'Anthony Edwards et que
+disent les supporters Reddit de ses performances en playoffs ?
+Route : hybrid
 
 
 ============================================================
 4. OUT_OF_SCOPE
 ============================================================
 
-Choisis OUT_OF_SCOPE lorsque la question n'appartient pas au
-périmètre NBA du système.
+Choisis OUT_OF_SCOPE lorsque la question n'appartient pas
+au périmètre NBA du système.
 
-Cela inclut notamment :
-
+Exemples :
 - football ;
 - tennis ;
 - politique ;
@@ -385,45 +288,31 @@ Cela inclut notamment :
 - météo ;
 - sujets sans rapport avec la NBA.
 
-Exemple :
-
 Question :
 Quel joueur a remporté le Ballon d'Or de football en 2024 ?
-
-Route :
-OUT_OF_SCOPE
+Route : out_of_scope
 
 
 ============================================================
 RÈGLES IMPORTANTES
 ============================================================
 
-Règle 1 :
-Une question sur une opinion, un commentaire ou un débat
-doit être RAG, sauf si elle demande explicitement aussi des
-statistiques.
+1. Une question sur une opinion ou un débat doit être RAG,
+sauf si elle demande explicitement aussi des statistiques.
 
-Règle 2 :
-Une question statistique calculable à partir de la base doit
-être SQL.
+2. Une question statistique calculable à partir de la base
+doit être SQL.
 
-Règle 3 :
-HYBRID nécessite explicitement les deux types d'information.
+3. HYBRID nécessite explicitement les deux types d'information.
 
-Règle 4 :
-Une question NBA historique n'est pas automatiquement SQL.
-La base SQL contient des statistiques de joueurs de la
-saison actuelle et ne constitue pas une base historique
-générale.
+4. Une question NBA historique n'est pas automatiquement SQL.
 
-Règle 5 :
-Une question extérieure à la NBA est OUT_OF_SCOPE.
+5. Une question extérieure à la NBA est OUT_OF_SCOPE.
 
-Règle 6 :
-Ne déduis pas qu'une question nécessite SQL uniquement parce
-qu'elle contient le nom d'un joueur ou d'une équipe.
+6. Ne déduis pas qu'une question nécessite SQL uniquement
+parce qu'elle contient le nom d'un joueur ou d'une équipe.
 
-Réponds UNIQUEMENT avec l'une des quatre valeurs suivantes :
+Réponds UNIQUEMENT avec l'une des valeurs suivantes :
 
 rag
 sql
@@ -437,7 +326,58 @@ QUESTION :
 ROUTE :
 """
 
-        # SDK Mistral 1.12.4
+
+# ============================================================
+# Pipeline RAG / SQL / Hybride
+# ============================================================
+
+class RAGPipeline:
+
+    VALID_ROUTES = {
+        "rag",
+        "sql",
+        "hybrid",
+        "out_of_scope",
+    }
+
+    def __init__(self):
+
+        if not MISTRAL_API_KEY:
+            raise ValueError(
+                "La clé API Mistral (MISTRAL_API_KEY) "
+                "n'est pas définie."
+            )
+
+        self.client = Mistral(api_key=MISTRAL_API_KEY)
+        self.model = MODEL_NAME
+
+        self.vector_store = VectorStoreManager()
+
+        if (
+            self.vector_store.index is None
+            or not self.vector_store.document_chunks
+        ):
+            raise RuntimeError(
+                "L'index FAISS ou les chunks "
+                "n'ont pas pu être chargés."
+            )
+
+        self.sql_tool = SQLTool()
+
+        logger.info(
+            "RAGPipeline initialisé avec %s vecteurs "
+            "et SQLTool actif.",
+            self.vector_store.index.ntotal,
+        )
+
+    # ========================================================
+    # Routage
+    # ========================================================
+
+    def route_question(self, question: str) -> str:
+
+        prompt = ROUTING_PROMPT.format(question=question)
+
         response = self.client.chat.complete(
             model=self.model,
             messages=[
@@ -464,30 +404,23 @@ ROUTE :
 
         route = content.strip().lower()
 
-        valid_routes = {
-            "rag",
-            "sql",
-            "hybrid",
-            "out_of_scope",
-        }
-
-        if route not in valid_routes:
-            logging.warning(
-                "Route invalide retournée par le modèle : %s. "
+        if route not in self.VALID_ROUTES:
+            logger.warning(
+                "Route invalide retournée : %s. "
                 "Fallback vers RAG.",
                 route,
             )
             route = "rag"
 
-        logging.info(
-            "Route sélectionnée pour la question : %s",
+        logger.info(
+            "Route sélectionnée : %s",
             route,
         )
 
         return route
 
     # ========================================================
-    # Retrieval FAISS
+    # Recherche documentaire FAISS
     # ========================================================
 
     def retrieve(
@@ -501,7 +434,7 @@ ROUTE :
         )
 
     # ========================================================
-    # Contexte documentaire
+    # Formatage du contexte documentaire
     # ========================================================
 
     def format_rag_context(
@@ -515,20 +448,25 @@ ROUTE :
                 "n'a été trouvée."
             )
 
-        return "\n\n---\n\n".join(
-            [
-                (
-                    f"Source documentaire : "
-                    f"{result['metadata'].get('source', 'Inconnue')} "
-                    f"(Score : {result['score']:.1f}%)\n"
-                    f"Contenu : {result['text']}"
-                )
-                for result in search_results
-            ]
-        )
+        context_parts = []
+
+        for result in search_results:
+
+            metadata = result.get("metadata") or {}
+            source = metadata.get("source", "Inconnue")
+            score = result.get("score", 0.0)
+            text = result.get("text", "")
+
+            context_parts.append(
+                f"Source documentaire : {source} "
+                f"(Score : {score:.1f}%)\n"
+                f"Contenu : {text}"
+            )
+
+        return "\n\n---\n\n".join(context_parts)
 
     # ========================================================
-    # Contexte SQL
+    # Formatage du contexte SQL
     # ========================================================
 
     def format_sql_context(
@@ -536,10 +474,13 @@ ROUTE :
         sql_result: dict[str, Any],
     ) -> str:
 
-        results = sql_result.get(
-            "results",
-            [],
-        )
+        if sql_result.get("error"):
+            return (
+                "Le SQLTool a rencontré une erreur : "
+                f"{sql_result['error']}"
+            )
+
+        results = sql_result.get("results") or []
 
         if not results:
             return (
@@ -549,8 +490,8 @@ ROUTE :
         return (
             "Résultats statistiques issus de la base SQL :\n\n"
             f"Requête SQL exécutée :\n"
-            f"{sql_result['sql']}\n\n"
-            f"Résultats :\n"
+            f"{sql_result.get('sql')}\n\n"
+            "Résultats :\n"
             f"{json.dumps(results, ensure_ascii=False, indent=2)}"
         )
 
@@ -569,7 +510,6 @@ ROUTE :
             question=question,
         )
 
-        # SDK Mistral 1.12.4
         response = self.client.chat.complete(
             model=self.model,
             messages=[
@@ -615,12 +555,21 @@ ROUTE :
         # ----------------------------------------------------
 
         with trace_step("nba.routing") as span:
+
             route = self.route_question(question)
-            span.set_attribute("nba.route", route)
+
+            span.set_attribute(
+                "nba.route",
+                route,
+            )
+
+        # ----------------------------------------------------
+        # 2. Question hors périmètre
+        # ----------------------------------------------------
 
         if route == "out_of_scope":
 
-            logging.info(
+            logger.info(
                 "Question hors périmètre NBA détectée."
             )
 
@@ -628,9 +577,10 @@ ROUTE :
                 "question": question,
                 "route": route,
                 "answer": (
-                    "Cette question est hors du périmètre de ce système, "
-                    "qui est spécialisé dans l'analyse des données et "
-                    "discussions NBA disponibles dans son corpus."
+                    "Cette question est hors du périmètre "
+                    "de ce système, qui est spécialisé dans "
+                    "l'analyse des données et discussions NBA "
+                    "disponibles dans son corpus."
                 ),
                 "contexts": [],
                 "sources": [],
@@ -645,23 +595,21 @@ ROUTE :
         context_parts = []
 
         # ----------------------------------------------------
-        # 2. Retrieval documentaire
+        # 3. Recherche documentaire
         # ----------------------------------------------------
 
-        if route in {
-            "rag",
-            "hybrid",
-        }:
+        if route in {"rag", "hybrid"}:
 
             with trace_step(
                 "nba.faiss_retrieval",
                 top_k=SEARCH_K,
             ) as span:
 
-                return self.vector_store.search(
-                    question,
-                    k=SEARCH_K,
-                )
+                # Important :
+                # Ne pas utiliser return ici.
+                # Le pipeline doit poursuivre son exécution.
+
+                search_results = self.retrieve(question)
 
                 span.set_attribute(
                     "nba.documents_retrieved",
@@ -678,13 +626,10 @@ ROUTE :
             )
 
         # ----------------------------------------------------
-        # 3. Retrieval SQL
+        # 4. Recherche SQL
         # ----------------------------------------------------
 
-        if route in {
-            "sql",
-            "hybrid",
-        }:
+        if route in {"sql", "hybrid"}:
 
             try:
 
@@ -713,7 +658,7 @@ ROUTE :
 
             except Exception as error:
 
-                logging.exception(
+                logger.exception(
                     "Erreur pendant l'utilisation du SQLTool."
                 )
 
@@ -730,23 +675,17 @@ ROUTE :
                 )
 
         # ----------------------------------------------------
-        # 4. Construction du contexte final
+        # 5. Construction du contexte final
         # ----------------------------------------------------
 
-        if not context_parts:
-
-            context_str = (
-                "Aucun contexte exploitable n'a été trouvé."
-            )
-
-        else:
-
-            context_str = "\n\n".join(
-                context_parts
-            )
+        context_str = (
+            "\n\n".join(context_parts)
+            if context_parts
+            else "Aucun contexte exploitable n'a été trouvé."
+        )
 
         # ----------------------------------------------------
-        # 5. Génération
+        # 6. Génération de réponse
         # ----------------------------------------------------
 
         with trace_step(
@@ -761,7 +700,7 @@ ROUTE :
             )
 
         # ----------------------------------------------------
-        # 6. Métadonnées documentaires
+        # 7. Métadonnées documentaires
         # ----------------------------------------------------
 
         contexts = [
@@ -770,7 +709,7 @@ ROUTE :
         ]
 
         sources = [
-            result["metadata"].get(
+            (result.get("metadata") or {}).get(
                 "source",
                 "Inconnue",
             )
@@ -783,30 +722,25 @@ ROUTE :
         ]
 
         # ----------------------------------------------------
-        # 7. Métadonnées SQL
+        # 8. Métadonnées SQL
         # ----------------------------------------------------
 
         sql_query = None
         sql_results = []
         sql_error = None
 
-        if sql_result:
+        if sql_result is not None:
 
-            sql_query = sql_result.get(
-                "sql"
+            sql_query = sql_result.get("sql")
+
+            sql_results = (
+                sql_result.get("results") or []
             )
 
-            sql_results = sql_result.get(
-                "results",
-                [],
-            )
-
-            sql_error = sql_result.get(
-                "error"
-            )
+            sql_error = sql_result.get("error")
 
         # ----------------------------------------------------
-        # 8. Résultat final
+        # 9. Résultat final
         # ----------------------------------------------------
 
         return {
@@ -830,7 +764,9 @@ ROUTE :
         question: str,
     ) -> dict[str, Any]:
 
-        with trace_step("nba.question_processing") as span:
+        with trace_step(
+            "nba.question_processing"
+        ) as span:
 
             result = self.ask(question)
 
