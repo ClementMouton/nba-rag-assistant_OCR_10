@@ -1,3 +1,7 @@
+# MÉTHODOLOGIE — Garde-fous SQL
+# Ces tests exercent la validation des requêtes autorisées/interdites.
+# La sécurité de lecture ne garantit pas la pertinence des résultats.
+
 import pytest
 
 from utils.sql_tool import SQLTool

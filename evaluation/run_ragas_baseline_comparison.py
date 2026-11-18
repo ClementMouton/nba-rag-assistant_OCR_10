@@ -1,3 +1,14 @@
+# MÉTHODOLOGIE — Recalcul RAGAS du prototype documentaire
+# Ce script sélectionne Q01 à Q05 dans les réponses baseline archivées,
+# puis transmet question, réponse, contextes et référence au juge RAGAS.
+# Il ne lance pas une nouvelle génération de réponses du prototype.
+# Les cinq passages récupérés par question sont identiques et ordonnés
+# de la même façon dans les deux archives comparées. Les différences
+# de Context Precision/Recall entre campagnes ne démontrent donc pas
+# une amélioration de la récupération documentaire.
+# Le CSV de sortie est écrasé à chaque nouvelle exécution ; le modèle
+# désigné par l'alias latest peut aussi évoluer entre campagnes.
+
 
 import sys
 import json

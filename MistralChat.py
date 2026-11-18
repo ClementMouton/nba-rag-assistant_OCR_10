@@ -1,3 +1,9 @@
+# MÉTHODOLOGIE — Interface Streamlit
+# Ce fichier gère l'affichage et l'historique conversationnel.
+# Le routage, la recherche FAISS, le SQL et la génération sont
+# implémentés dans les modules utils/ ; le cache Streamlit évite
+# de recréer le pipeline à chaque interaction.
+
 import logging
 
 import streamlit as st

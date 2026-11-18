@@ -1,3 +1,7 @@
+# MÉTHODOLOGIE — Intégrité des données statistiques
+# Ces tests vérifient la disponibilité et la cohérence des données
+# SQLite utilisées par le POC sur les cas de référence définis.
+
 import sqlite3
 from pathlib import Path
 

@@ -1,3 +1,10 @@
+# MÉTHODOLOGIE — Préparation des statistiques NBA
+# La feuille Excel est lue avec ses en-têtes réels, puis les colonnes
+# nécessaires sont sélectionnées et validées avec Pydantic avant
+# chargement dans la table SQLite player_stats.
+# Les pourcentages sont représentés sur une échelle de 0 à 100.
+# SQLite reste distinct du corpus de commentaires indexé dans FAISS.
+
 from pathlib import Path
 import sqlite3
 

@@ -1,3 +1,13 @@
+# MÉTHODOLOGIE — Vérification fonctionnelle des sorties SQL archivées
+# Les références attendues sont codées explicitement pour les questions
+# statistiques Q07 à Q10 et les contrôles hybrides prévus ci-dessous.
+# La comparaison porte sur les lignes de résultats SQL enregistrées,
+# et non sur l'ensemble du texte rédigé par le modèle de synthèse.
+# Le score 4/4 des questions SQL enrichies n'est donc pas directement
+# symétrique au 0/4 du prototype établi par lecture de ses réponses.
+# Les cas sont connus et limités : ce contrôle ne mesure pas la robustesse
+# sur des questions inédites. Le JSON de sortie est réécrit à l'exécution.
+
 import json
 from pathlib import Path
 

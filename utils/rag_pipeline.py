@@ -1,3 +1,12 @@
+# MÉTHODOLOGIE — Orchestration des réponses NBA
+# Le routeur sélectionne une voie : rag (documents), sql (statistiques),
+# hybrid (les deux sources) ou out_of_scope (refus contextualisé).
+# Le contexte est constitué à partir des extraits FAISS et/ou des lignes SQL,
+# puis transmis au modèle pour la synthèse. Les consignes du prompt visent
+# à séparer opinions documentaires et chiffres SQLite, sans garantir
+# l'absence d'erreurs factuelles dans le texte final.
+# Les traces du pipeline permettent d'examiner séparément les étapes.
+
 
 import json
 import logging

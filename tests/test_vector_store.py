@@ -1,3 +1,7 @@
+# MÉTHODOLOGIE — Intégrité de l'index documentaire
+# Ces tests vérifient les propriétés techniques de l'index FAISS
+# et des chunks associés, pas la pertinence sémantique des passages.
+
 from pathlib import Path
 
 import faiss

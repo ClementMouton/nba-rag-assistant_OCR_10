@@ -1,3 +1,15 @@
+# MÉTHODOLOGIE — Évaluation des réponses archivées du système enrichi
+# Ce script relit hybrid_results.json ; il ne régénère pas les réponses.
+# Les échantillons transmis à RAGAS comprennent la réponse complète,
+# mais retrieved_contexts correspond aux seuls extraits documentaires FAISS.
+# Les lignes SQL ne sont donc pas fournies comme contexte au juge : pour
+# les questions hybrides, Faithfulness ne mesure pas correctement à elle
+# seule la justification des statistiques provenant de SQLite.
+# Les CSV de sortie sont réécrits lors de l'exécution : préserver une copie
+# des résultats de référence avant toute nouvelle campagne.
+# Le fichier evaluate_hybrid.py évoqué dans une docstring est absent
+# du dépôt livré ; l'archive hybrid_results.json est déjà fournie.
+
 import sys
 import json
 from pathlib import Path

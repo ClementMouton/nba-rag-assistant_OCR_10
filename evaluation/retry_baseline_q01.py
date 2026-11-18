@@ -1,3 +1,9 @@
+# MÉTHODOLOGIE — Recalcul ponctuel de Faithfulness pour Q01
+# Ce script corrige une valeur manquante après une erreur de parsing
+# du juge RAGAS, sans régénérer la réponse initiale.
+# Si le score est valide, la première ligne du CSV est remplacée.
+# Conserver une copie du CSV avant toute nouvelle exécution.
+
 
 import sys
 import json

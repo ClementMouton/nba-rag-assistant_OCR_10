@@ -1,3 +1,12 @@
+# MÉTHODOLOGIE — Indexation et recherche sémantique
+# Les documents textuels sont segmentés avec un chevauchement configurable,
+# encodés avec mistral-embed et indexés localement dans FAISS.
+# Les chunks et leurs métadonnées sont conservés dans un artefact distinct :
+# la correspondance entre positions de l'index et chunks est indispensable.
+# La recherche restitue les passages voisins de la question vectorisée ;
+# la proximité vectorielle ne garantit ni pertinence métier ni exactitude.
+# L'index doit être reconstruit lorsque les sources ou paramètres changent.
+
 
 # utils/vector_store.py
 
