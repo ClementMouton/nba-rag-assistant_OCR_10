@@ -1,3 +1,9 @@
+# MÉTHODOLOGIE — Configuration centralisée
+# Les variables d'environnement permettent de modifier les modèles,
+# chemins et paramètres de chunking sans modifier les autres modules.
+# Les valeurs par défaut documentent la configuration du POC.
+# La clé Mistral doit rester dans .env et ne jamais être commitée.
+
 import os
 from dotenv import load_dotenv
 
