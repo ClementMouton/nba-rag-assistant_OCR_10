@@ -1,3 +1,10 @@
+# MÉTHODOLOGIE — Ingestion des sources
+# Le chargeur prend en charge plusieurs formats ; dans ce POC, les PDF
+# Reddit constituent le corpus documentaire destiné à FAISS.
+# Une extraction textuelle est tentée avant un repli OCR si nécessaire.
+# L'OCR peut être lent sur CPU et introduire des erreurs de transcription.
+# Le bruit des documents peut se propager aux chunks et aux réponses.
+
 # utils/data_loader.py
 import os
 import requests
